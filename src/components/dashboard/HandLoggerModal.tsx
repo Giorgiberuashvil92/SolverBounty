@@ -169,6 +169,8 @@ export function HandLoggerModal({
   const [heroPosition, setHeroPosition] = useState<string | null>(null);
   const [selectedSeat, setSelectedSeat] = useState<string | null>(null);
   const [streetActions, setStreetActions] = useState<StreetActionMap>(emptyStreetActions);
+  const [actionTimeline, setActionTimeline] = useState<StructuredAction[]>([]);
+  const [actionSizeDraft, setActionSizeDraft] = useState('');
   const [logStreet, setLogStreet] = useState<ActionStreet>('preflop');
   const [holeCards, setHoleCards] = useState<string[]>([]);
   const [boardCards, setBoardCards] = useState<string[]>([]);
@@ -219,6 +221,8 @@ export function HandLoggerModal({
     setHeroPosition(null);
     setSelectedSeat(null);
     setStreetActions(emptyStreetActions());
+    setActionTimeline([]);
+    setActionSizeDraft('');
     setLogStreet('preflop');
     setHoleCards([]);
     setBoardCards([]);
@@ -256,6 +260,16 @@ export function HandLoggerModal({
     if (!selectedSeat) return;
     if (isOutBefore(selectedSeat, street, streetActions)) return;
     const current = selectedSeat;
+    const parsedSize = Number(actionSizeDraft.replace(',', '.'));
+    const sizeBb =
+      ['call', 'raise', 'bet', 'allin'].includes(action) && Number.isFinite(parsedSize) && parsedSize > 0
+        ? parsedSize
+        : undefined;
+    setActionTimeline((prev) => [
+      ...prev,
+      { street, actor: current, action, ...(sizeBb != null ? { sizeBb } : {}) },
+    ]);
+    setActionSizeDraft('');
     setStreetActions((prev) => {
       const lane = { ...prev[street], [current]: action };
       const next = { ...prev, [street]: lane };
@@ -265,6 +279,10 @@ export function HandLoggerModal({
       if (nextEmpty) setSelectedSeat(nextEmpty);
       return next;
     });
+  };
+
+  const undoLastAction = () => {
+    setActionTimeline((prev) => prev.slice(0, -1));
   };
 
   const markHero = () => {
@@ -373,7 +391,7 @@ export function HandLoggerModal({
     if (!heroPosition || holeCards.length < 2) return;
     const parsedResult = Number(String(resultDraft).replace(/,/g, '.'));
     const finalResult = Number.isFinite(parsedResult) ? parsedResult : resultBb;
-    const actions: StructuredAction[] = ACTION_STREETS.flatMap((street) =>
+    const fallbackActions: StructuredAction[] = ACTION_STREETS.flatMap((street) =>
       seats
         .filter((pos) => streetActions[street][pos])
         .filter((pos) => streetUnlocked(street, boardCards.length))
@@ -383,6 +401,7 @@ export function HandLoggerModal({
           action: streetActions[street][pos]!,
         })),
     );
+    const actions = actionTimeline.length ? actionTimeline : fallbackActions;
     const actionLine = actions
       .map((a) => `${a.street}:${a.actor}:${a.action}`)
       .join(' ');
@@ -394,7 +413,12 @@ export function HandLoggerModal({
       foldedCount ? `${foldedCount} folded` : null,
       boardCards.length ? `board ${boardCards.join(' ')}` : null,
       actions.length
-        ? actions.map((a) => `${a.street[0].toUpperCase()}${a.actor}:${a.action}`).join(' ')
+        ? actions
+            .map(
+              (a) =>
+                `${a.street[0].toUpperCase()}${a.actor}:${a.action}${a.sizeBb != null ? ` ${a.sizeBb}bb` : ''}`,
+            )
+            .join(' ')
         : null,
       note.trim() || null,
     ].filter(Boolean);
@@ -619,6 +643,32 @@ export function HandLoggerModal({
                       </Pressable>
                     ))}
                   </View>
+                  <View style={styles.sizeRow}>
+                    <TextInput
+                      value={actionSizeDraft}
+                      onChangeText={(raw) =>
+                        setActionSizeDraft(raw.replace(',', '.').replace(/[^\d.]/g, ''))
+                      }
+                      keyboardType="decimal-pad"
+                      placeholder="Size in bb"
+                      placeholderTextColor={dash.textMuted}
+                      style={styles.sizeInput}
+                    />
+                    <Text style={styles.sizeUnit}>Optional for Call / Raise / All-in</Text>
+                  </View>
+                  {actionTimeline.filter((a) => a.street === 'preflop').length ? (
+                    <View style={styles.timeline}>
+                      <Text style={styles.timelineText}>
+                        {actionTimeline
+                          .filter((a) => a.street === 'preflop')
+                          .map((a) => `${a.actor} ${a.action}${a.sizeBb != null ? ` ${a.sizeBb}bb` : ''}`)
+                          .join('  →  ')}
+                      </Text>
+                      <Pressable onPress={undoLastAction} hitSlop={8}>
+                        <Text style={styles.undoText}>Undo last</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
 
                 <Text style={styles.label}>Pot type · how deep was the preflop raise war?</Text>
@@ -847,6 +897,32 @@ export function HandLoggerModal({
                       );
                     })}
                   </View>
+                  <View style={styles.sizeRow}>
+                    <TextInput
+                      value={actionSizeDraft}
+                      onChangeText={(raw) =>
+                        setActionSizeDraft(raw.replace(',', '.').replace(/[^\d.]/g, ''))
+                      }
+                      keyboardType="decimal-pad"
+                      placeholder="Size in bb"
+                      placeholderTextColor={dash.textMuted}
+                      style={styles.sizeInput}
+                    />
+                    <Text style={styles.sizeUnit}>Optional for Call / Raise / All-in</Text>
+                  </View>
+                  {actionTimeline.filter((a) => a.street === logStreet).length ? (
+                    <View style={styles.timeline}>
+                      <Text style={styles.timelineText}>
+                        {actionTimeline
+                          .filter((a) => a.street === logStreet)
+                          .map((a) => `${a.actor} ${a.action}${a.sizeBb != null ? ` ${a.sizeBb}bb` : ''}`)
+                          .join('  →  ')}
+                      </Text>
+                      <Pressable onPress={undoLastAction} hitSlop={8}>
+                        <Text style={styles.undoText}>Undo last</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
 
                 <Text style={styles.label}>Result (bb)</Text>
@@ -1165,6 +1241,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  sizeRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  sizeInput: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    color: dash.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: 108,
+  },
+  sizeUnit: { color: dash.textMuted, flex: 1, fontFamily: fonts.body, fontSize: 11 },
+  timeline: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    gap: 5,
+    paddingTop: 8,
+  },
+  timelineText: { color: dash.textSecondary, fontFamily: fonts.bodySemi, fontSize: 12, lineHeight: 17 },
+  undoText: { color: dash.opsSoft, fontFamily: fonts.bodyBold, fontSize: 12 },
   actionBtn: {
     paddingHorizontal: 10,
     paddingVertical: 10,

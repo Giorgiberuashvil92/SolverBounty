@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -152,9 +153,25 @@ function parseHandBubble(content: string): ParsedBubbleHand | null {
   return { heroLine, holeCards, meta, rest: question };
 }
 
+function plainCoachText(content: string) {
+  return content
+    .replace(/\*\*/g, '')
+    .replace(/(^|\n)\s*[-*]\s+/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .trim();
+}
+
 function ChatBubble({ item }: { item: CoachMessage }) {
   const isUser = item.role === 'user';
   const hand = isUser ? parseHandBubble(item.content) : null;
+  const [copied, setCopied] = useState(false);
+  const displayContent = isUser ? item.content : plainCoachText(item.content);
+
+  const copyReply = async () => {
+    await Clipboard.setStringAsync(displayContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
 
   if (hand) {
     return (
@@ -197,7 +214,28 @@ function ChatBubble({ item }: { item: CoachMessage }) {
       ) : null}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
         {!isUser ? <Text style={styles.aiLabel}>Coach</Text> : null}
-        <Text style={[styles.bubbleText, !isUser && styles.bubbleTextAi]}>{item.content}</Text>
+        {displayContent ? (
+          <>
+            <Text style={[styles.bubbleText, !isUser && styles.bubbleTextAi]}>{displayContent}</Text>
+            {!isUser ? (
+              <Pressable
+                onPress={() => void copyReply()}
+                accessibilityRole="button"
+                accessibilityLabel="Copy Coach reply"
+                hitSlop={8}
+                style={({ pressed }) => [styles.copyReply, pressed && { opacity: 0.65 }]}
+              >
+                <Ionicons
+                  name={copied ? 'checkmark' : 'copy-outline'}
+                  size={15}
+                  color={copied ? dash.cta : dash.opsSoft}
+                />
+              </Pressable>
+            ) : null}
+          </>
+        ) : (
+          <ActivityIndicator color={dash.opsSoft} size="small" />
+        )}
       </View>
     </View>
   );
@@ -435,16 +473,47 @@ export function CoachScreen() {
     setBusy(true);
     const keptInput = input;
     const keptAttach = attachments;
+    const optimisticMessage: CoachMessage = {
+      id: `pending-${Date.now()}`,
+      role: 'user',
+      content: outbound,
+      createdAt: new Date().toISOString(),
+    };
+    const streamingMessage: CoachMessage = {
+      id: `streaming-${Date.now()}`,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+    };
     setInput('');
     setAttachments([]);
+    setMessages((prev) => [...prev, optimisticMessage, streamingMessage]);
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     try {
-      const thread = await coachApi.chat(outbound, threadId);
+      const thread = await coachApi.chatStream(outbound, threadId, {
+        onDelta: (delta) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === streamingMessage.id
+                ? { ...message, content: message.content + delta }
+                : message,
+            ),
+          );
+          setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 0);
+        },
+      });
       setThreadId(thread.id);
       setMessages(thread.messages);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (e) {
       setInput(keptInput);
       setAttachments(keptAttach);
+      setMessages((prev) =>
+        prev.filter(
+          (message) =>
+            message.id !== optimisticMessage.id && message.id !== streamingMessage.id,
+        ),
+      );
       Alert.alert('Coach', (e as Error).message);
     } finally {
       setBusy(false);
@@ -1292,6 +1361,14 @@ const styles = StyleSheet.create({
   },
   bubbleTextAi: {
     color: 'rgba(255,255,255,0.88)',
+  },
+  copyReply: {
+    alignSelf: 'flex-end',
+    alignItems: 'center',
+    height: 28,
+    justifyContent: 'center',
+    marginTop: 5,
+    width: 28,
   },
 
   handBubble: {

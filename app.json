@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
+      "bundleIdentifier": "com.solverbounty.app",
       "supportsTablet": true,
       "usesAppleSignIn": true
     },

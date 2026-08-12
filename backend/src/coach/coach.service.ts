@@ -10,6 +10,7 @@ import {
   heuristicCoachReply,
   heuristicParseHand,
   parseHandWithLlm,
+  streamChatWithLlm,
 } from './llm';
 import type { ChatDto, ParseHandDto } from './coach.dto';
 
@@ -147,6 +148,68 @@ export class CoachService {
     await this.analytics.track(userId, 'coach_message', {
       usedLlm: Boolean(llm),
       messageLen: dto.message.length,
+    });
+
+    return this.toDto(thread);
+  }
+
+  async chatStream(
+    userId: string,
+    dto: ChatDto,
+    onDelta: (delta: string) => void,
+  ) {
+    const now = new Date().toISOString();
+    let thread = dto.threadId
+      ? await this.threads.findOne({ _id: dto.threadId, userId })
+      : await this.threads.findOne({ userId }).sort({ updatedAt: -1 });
+
+    if (dto.threadId && !thread) {
+      throw new NotFoundException('Thread not found');
+    }
+
+    if (!thread) {
+      thread = await this.threads.create({
+        _id: uuid(),
+        userId,
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const userMsg = {
+      id: uuid(),
+      role: 'user' as const,
+      content: dto.message.trim(),
+      createdAt: now,
+    };
+    thread.messages.push(userMsg);
+
+    const history = thread.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(-12)
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
+
+    const llm = await streamChatWithLlm(this.config, history, onDelta);
+    const reply = llm ?? heuristicCoachReply(dto.message);
+    if (!llm) onDelta(reply);
+    const assistantMsg = {
+      id: uuid(),
+      role: 'assistant' as const,
+      content: reply,
+      createdAt: new Date().toISOString(),
+    };
+    thread.messages.push(assistantMsg);
+    thread.updatedAt = assistantMsg.createdAt;
+    await thread.save();
+
+    await this.analytics.track(userId, 'coach_message', {
+      usedLlm: Boolean(llm),
+      messageLen: dto.message.length,
+      streamed: true,
     });
 
     return this.toDto(thread);

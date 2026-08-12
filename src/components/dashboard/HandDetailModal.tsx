@@ -512,6 +512,7 @@ export function HandDetailModal({
                         <Text style={{ color: tone.verb, fontFamily: fonts.bodyBold }}>
                           {a.action}
                         </Text>
+                        {a.sizeBb != null ? ` ${a.sizeBb}bb` : ''}
                       </Text>
                     </View>
                   );

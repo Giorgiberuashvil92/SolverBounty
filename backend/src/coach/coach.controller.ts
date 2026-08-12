@@ -5,8 +5,10 @@ import {
   Get,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { CoachService } from './coach.service';
@@ -45,6 +47,34 @@ export class CoachController {
   @Post('chat')
   chat(@CurrentUser() user: AuthUser, @Body() body: ChatDto) {
     return this.coach.chat(user.userId, body);
+  }
+
+  @Post('chat/stream')
+  async chatStream(
+    @CurrentUser() user: AuthUser,
+    @Body() body: ChatDto,
+    @Res() res: Response,
+  ) {
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = (payload: Record<string, unknown>) => {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    try {
+      const thread = await this.coach.chatStream(user.userId, body, (delta) => {
+        send({ type: 'delta', delta });
+      });
+      send({ type: 'done', thread });
+    } catch (error) {
+      send({ type: 'error', message: (error as Error).message || 'Coach unavailable' });
+    } finally {
+      res.end();
+    }
   }
 
   @Post('parse-hand')

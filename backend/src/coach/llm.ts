@@ -7,7 +7,9 @@ Cards: rank+suit As Kd Th. Positions: UTG LJ HJ CO BTN SB BB.`;
 
 const COACH_SYSTEM = `You are a sharp but calm poker coach for cash/MTT grinders.
 Give concise, actionable advice (max ~180 words). Prefer ranges, sizings, and one clear next step.
-No fluff. If info is missing, ask one clarifying question.`;
+No fluff. If info is missing, ask one clarifying question.
+Reply in plain text only: no Markdown, no asterisks, no headings, no bullet characters, and no tables.
+You receive text only. Never claim to see a screenshot, cards, board, bet size, stack depth, or action that the user did not explicitly provide in text.`;
 
 const HAND_ANALYZE_SYSTEM = `You are a poker hand reviewer for cash grinders.
 Return STRICT JSON only (no markdown) with this schema:
@@ -39,7 +41,7 @@ export async function chatWithLlm(
     },
     body: JSON.stringify({
       model: config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
-      temperature: 0.4,
+      reasoning_effort: 'none',
       messages: [{ role: 'system', content: COACH_SYSTEM }, ...messages],
     }),
   });
@@ -48,6 +50,68 @@ export async function chatWithLlm(
     choices?: Array<{ message?: { content?: string } }>;
   };
   return data.choices?.[0]?.message?.content?.trim() || null;
+}
+
+export async function streamChatWithLlm(
+  config: ConfigService,
+  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+  onDelta: (delta: string) => void,
+): Promise<string | null> {
+  const key = config.get<string>('OPENAI_API_KEY');
+  if (!key) return null;
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
+      reasoning_effort: 'none',
+      stream: true,
+      messages: [{ role: 'system', content: COACH_SYSTEM }, ...messages],
+    }),
+  });
+  if (!res.ok || !res.body) return null;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let reply = '';
+
+  const consume = (event: string) => {
+    for (const line of event.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (!delta) continue;
+        reply += delta;
+        onDelta(delta);
+      } catch {
+        // Ignore malformed SSE frames and keep the response alive.
+      }
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      consume(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+  if (buffer.trim()) consume(buffer);
+  return reply.trim() || null;
 }
 
 export async function analyzeHandWithLlm(
@@ -65,7 +129,7 @@ export async function analyzeHandWithLlm(
     },
     body: JSON.stringify({
       model: config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
-      temperature: 0.35,
+      reasoning_effort: 'none',
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: HAND_ANALYZE_SYSTEM },
@@ -106,7 +170,7 @@ export async function parseHandWithLlm(
     },
     body: JSON.stringify({
       model: config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
-      temperature: 0.2,
+      reasoning_effort: 'none',
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: VOICE_TO_HAND_SYSTEM },
