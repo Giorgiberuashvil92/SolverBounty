@@ -1,6 +1,9 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+// Railway-ს ბექენდის URL
+const PRODUCTION_API_URL = 'https://solverbounty-production.up.railway.app';
+
 /**
  * Resolve API host for simulator / emulator / physical device.
  * Prefer EXPO_PUBLIC_API_URL, then Expo LAN host, then platform defaults.
@@ -20,10 +23,17 @@ function lanHostFromExpo(): string | undefined {
 }
 
 function defaultHost(): string {
+  // 1. თუ EXPO_PUBLIC_API_URL გაწერილია .env-ში, გამოიყენოს ის
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
   }
 
+  // 2. თუ აპლიკაცია პროდაქშენშია (Build გაკეთებულია), გამოიყენოს Railway
+  if (!__DEV__) {
+    return PRODUCTION_API_URL;
+  }
+
+  // 3. დეველოპმენტში (ლოკალურად) მუშაობისას:
   const lan = lanHostFromExpo();
   if (lan && lan !== 'localhost') {
     return `http://${lan}:3000`;
