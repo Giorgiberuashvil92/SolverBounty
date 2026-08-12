@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pokeraicoach.app/schemas/session.json",
+  "title": "PokerSession",
+  "type": "object",
+  "required": [
+    "id",
+    "userId",
+    "status",
+    "gameType",
+    "venue",
+    "stakesLabel",
+    "durationSeconds",
+    "buyInCents",
+    "currency",
+    "keyHands",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "userId": { "type": "string" },
+    "status": { "enum": ["idle", "precheck", "live", "ended"] },
+    "gameType": { "enum": ["cash", "mtt", "spins", "home_game"] },
+    "venue": { "enum": ["online", "live"] },
+    "stakesLabel": { "type": "string" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" },
+    "durationSeconds": { "type": "integer", "minimum": 0 },
+    "buyInCents": { "type": "integer" },
+    "cashOutCents": { "type": "integer" },
+    "profitLossCents": { "type": "integer" },
+    "hourlyRateCents": { "type": "integer" },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "preSession": {
+      "type": "object",
+      "required": ["hydration", "warmup", "focusLevel"],
+      "properties": {
+        "hydration": { "type": "boolean" },
+        "warmup": { "type": "boolean" },
+        "focusLevel": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "postSession": {
+      "type": "object",
+      "required": ["tiltScore", "energyLevel", "reviewCompleted"],
+      "properties": {
+        "tiltScore": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "energyLevel": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "notes": { "type": "string" },
+        "reviewCompleted": { "type": "boolean" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "keyHands": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/KeyHand" }
+    },
+    "notes": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "KeyHand": {
+      "type": "object",
+      "required": ["id", "sessionId", "createdAt", "source", "tags"],
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "source": {
+          "enum": ["text", "voice", "screenshot_ocr", "manual"]
+        },
+        "rawInput": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "heroPosition": { "type": "string" },
+        "villainPositions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "stakes": { "type": "string" },
+        "board": { "type": "array", "items": { "type": "string" } },
+        "holeCards": { "type": "array", "items": { "type": "string" } },
+        "potType": {
+          "enum": ["srp", "3bet", "4bet", "limped", "iso"]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["street", "actor", "action"],
+            "properties": {
+              "street": {
+                "enum": ["preflop", "flop", "turn", "river", "showdown"]
+              },
+              "actor": { "type": "string" },
+              "action": {
+                "enum": ["fold", "check", "call", "bet", "raise", "allin"]
+              },
+              "sizeBb": { "type": "number" },
+              "potBbAfter": { "type": "number" }
+            }
+          }
+        },
+        "resultBb": { "type": "number" },
+        "aiSummary": { "type": "string" },
+        "aiAnalysis": { "type": "string" },
+        "shareTargets": {
+          "type": "array",
+          "items": {
+            "enum": ["study_group", "discord", "telegram"]
+          }
+        },
+        "voiceNoteUri": { "type": "string" },
+        "screenshotUri": { "type": "string" }
+      }
+    }
+  }
+}

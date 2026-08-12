@@ -1,0 +1,139 @@
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  Outfit_400Regular,
+  Outfit_500Medium,
+  Outfit_600SemiBold,
+  Outfit_700Bold,
+  useFonts,
+} from '@expo-google-fonts/outfit';
+import * as SplashScreen from 'expo-splash-screen';
+import { CommunityScreen } from './src/screens/CommunityScreen';
+import { DrillsScreen } from './src/screens/DrillsScreen';
+import { DashboardScreen } from './src/screens/DashboardScreen';
+import { CoachScreen } from './src/screens/CoachScreen';
+import { ReviewsScreen } from './src/screens/ReviewsScreen';
+import { AuthScreen } from './src/screens/AuthScreen';
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { NeonTabBar } from './src/components/NeonTabBar';
+import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { dash } from './src/theme/dashboard';
+import type { AppTab } from './src/navigation/tabs';
+
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+function AppShell({ onLayout }: { onLayout?: () => void }) {
+  const { user, loading } = useAuth();
+  const [tab, setTab] = useState<AppTab>('daily');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [hideTabBar, setHideTabBar] = useState(false);
+
+  if (loading) {
+    return (
+      <View style={[styles.shell, styles.bootCenter]} onLayout={onLayout}>
+        <ActivityIndicator color={dash.brand} />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return (
+      <View style={styles.shell} onLayout={onLayout}>
+        <StatusBar style="light" />
+        <AuthScreen />
+      </View>
+    );
+  }
+
+  if (!user.onboardingCompleted || showOnboarding) {
+    return (
+      <View style={styles.shell} onLayout={onLayout}>
+        <StatusBar style="light" />
+        <OnboardingScreen onFinished={() => setShowOnboarding(false)} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.shell} onLayout={onLayout}>
+      <StatusBar style="light" />
+      <View style={styles.body}>
+        {tab === 'daily' ? (
+          <DashboardScreen
+            onOpenCoachTab={() => setTab('coach')}
+            onOpenCoachChat={() => setTab('coach')}
+            onOpenOnboarding={() => setShowOnboarding(true)}
+            onOpenReviews={() => setTab('reviews')}
+          />
+        ) : null}
+        {tab === 'community' ? <CommunityScreen /> : null}
+        {tab === 'coach' ? <CoachScreen /> : null}
+        {tab === 'reviews' ? (
+          <ReviewsScreen
+            onOpenDaily={() => setTab('daily')}
+            onOpenCommunity={() => setTab('community')}
+          />
+        ) : null}
+        {tab === 'drills' ? (
+          <DrillsScreen onImmersiveChange={setHideTabBar} />
+        ) : null}
+      </View>
+      {!hideTabBar ? <NeonTabBar active={tab} onChange={setTab} /> : null}
+    </View>
+  );
+}
+
+export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    Outfit_400Regular,
+    Outfit_500Medium,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+  });
+
+  const ready = fontsLoaded || Boolean(fontError);
+
+  useEffect(() => {
+    if (ready) {
+      SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [ready]);
+
+  const onLayoutRoot = useCallback(() => {
+    if (ready) {
+      SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [ready]);
+
+  if (!ready) {
+    return <View style={styles.boot} />;
+  }
+
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <AppShell onLayout={onLayoutRoot} />
+      </AuthProvider>
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  boot: {
+    flex: 1,
+    backgroundColor: dash.bg,
+  },
+  bootCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shell: {
+    flex: 1,
+    backgroundColor: dash.bg,
+  },
+  body: {
+    flex: 1,
+  },
+});
