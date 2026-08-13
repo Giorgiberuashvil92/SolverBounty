@@ -83,6 +83,7 @@ export class HuSocket {
 
     this.socket.on('connected', (info) => handlers.onConnected?.(info));
     this.socket.on('match_found', (info) => handlers.onMatchFound?.(info));
+    this.socket.on('match_found', () => this.sync());
     this.socket.on('table_state', (view: HuView) => handlers.onTableState?.(view));
     this.socket.on('opponent_disconnected', (info) =>
       handlers.onOpponentDisconnected?.(info),

@@ -85,6 +85,10 @@ export class MentalDto {
   energyLevel!: number;
 
   @IsOptional()
+  @IsIn(['A', 'B', 'C'])
+  gameQuality?: 'A' | 'B' | 'C';
+
+  @IsOptional()
   @IsString()
   notes?: string;
 }

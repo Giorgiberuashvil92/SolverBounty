@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
-  Easing,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,19 +9,24 @@ import {
   Text,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { BankrollCard } from '../components/dashboard/BankrollCard';
+import { BankrollHistoryModal } from '../components/dashboard/BankrollHistoryModal';
 import { BankrollSetupCard } from '../components/dashboard/BankrollSetupCard';
 import { SessionTracker } from '../components/dashboard/SessionTracker';
 import { KeyHandsList } from '../components/dashboard/KeyHandsList';
 import { AICoachPanel } from '../components/dashboard/AICoachPanel';
 import { DailyFocusCard } from '../components/dashboard/DailyFocusCard';
+import { TodaySnapshotCard } from '../components/dashboard/TodaySnapshotCard';
 import { MoneyFormModal } from '../components/dashboard/MoneyFormModal';
 import { StartSessionModal } from '../components/dashboard/StartSessionModal';
 import { EndSessionModal } from '../components/dashboard/EndSessionModal';
 import { HandLoggerModal } from '../components/dashboard/HandLoggerModal';
-import { dashboardApi } from '../api/dashboardApi';
+import { QuickHandLogModal } from '../components/dashboard/QuickHandLogModal';
+import { SessionCompleteModal } from '../components/dashboard/SessionCompleteModal';
+import { dashboardApi, type DrillRecommendation } from '../api/dashboardApi';
+import { prependUserCommunityPost, sessionToCommunityPost } from '../data/communityFeedStore';
 import { API_BASE } from '../api/config';
 import { useAuth } from '../auth/AuthContext';
 import { dash } from '../theme/dashboard';
@@ -43,15 +46,19 @@ type MoneyModal =
 type DashboardScreenProps = {
   onOpenCoachChat?: () => void;
   onOpenCoachTab?: () => void;
-  onOpenOnboarding?: () => void;
+  onOpenProfile?: () => void;
   onOpenReviews?: () => void;
+  onOpenDrills?: (context?: { recommendation?: DrillRecommendation; sessionId?: string }) => void;
+  onOpenCommunity?: () => void;
 };
 
 export function DashboardScreen({
   onOpenCoachChat,
-  onOpenOnboarding,
+  onOpenProfile,
   onOpenCoachTab,
   onOpenReviews,
+  onOpenDrills,
+  onOpenCommunity,
 }: DashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -63,15 +70,28 @@ export function DashboardScreen({
     focusLevel: 5,
   });
   const [toReviewCount, setToReviewCount] = useState(0);
+  const [lastSessionPreset, setLastSessionPreset] = useState<{
+    stakes: string;
+    buyInCents: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [moneyModal, setMoneyModal] = useState<MoneyModal>(null);
+  const [bankrollHistoryOpen, setBankrollHistoryOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [handOpen, setHandOpen] = useState(false);
-  const glow = useRef(new Animated.Value(0.3)).current;
+  const [quickHandOpen, setQuickHandOpen] = useState(false);
+  const [quickHandSaving, setQuickHandSaving] = useState(false);
+  const [completed, setCompleted] = useState<{
+    session: PokerSession;
+    gameQuality: 'A' | 'B' | 'C';
+    tiltScore: number;
+    energyLevel: number;
+    recommendation: DrillRecommendation | null;
+  } | null>(null);
 
   const applySnapshot = useCallback((data: DashboardSnapshot) => {
     setSnapshot(data);
@@ -90,6 +110,12 @@ export function DashboardScreen({
       ]);
       applySnapshot(data);
       setToReviewCount(reviews?.toReview?.length ?? 0);
+      const mostRecent = reviews?.sessions.find((current) => current.status === 'ended');
+      setLastSessionPreset(
+        mostRecent
+          ? { stakes: mostRecent.stakesLabel, buyInCents: mostRecent.buyInCents }
+          : null,
+      );
     } catch (e) {
       setError((e as Error).message || 'Failed to load dashboard');
     } finally {
@@ -102,42 +128,17 @@ export function DashboardScreen({
     load();
   }, [load]);
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 0.65,
-          duration: 2400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glow, {
-          toValue: 0.28,
-          duration: 2400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [glow]);
-
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 18) return 'Good afternoon';
-    return 'Good evening';
-  }, []);
-
   const live = session?.status === 'live';
 
-  const lastSession = useMemo(() => {
-    const ended = (snapshot?.todaysSessions ?? [])
-      .filter((s) => s.status === 'ended')
-      .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''));
-    return ended[0] ?? null;
-  }, [snapshot?.todaysSessions]);
+  const todayLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+      }).format(new Date()),
+    [],
+  );
 
   const withBusy = async (fn: () => Promise<void>) => {
     if (busy) return;
@@ -152,6 +153,38 @@ export function DashboardScreen({
   };
 
   const bankrollReady = Boolean(snapshot?.bankrollInitialized && snapshot.bankroll);
+  const lastSession = useMemo(() => {
+    const ended = (snapshot?.todaysSessions ?? [])
+      .filter((current) => current.status === 'ended')
+      .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''));
+    return ended[0] ?? null;
+  }, [snapshot?.todaysSessions]);
+
+  const sessionPreset = useMemo(() => {
+    if (lastSessionPreset) {
+      return lastSessionPreset;
+    }
+    switch (user?.profile?.stakesBand) {
+      case 'high':
+        return { stakes: 'NL200', buyInCents: 20_000 };
+      case 'mid':
+        return { stakes: 'NL100', buyInCents: 10_000 };
+      case 'micro':
+        return { stakes: 'NL25', buyInCents: 2_500 };
+      default:
+        return { stakes: 'NL50', buyInCents: 5_000 };
+    }
+  }, [lastSessionPreset, user?.profile?.stakesBand]);
+
+  const sessionFormatLabel = useMemo(() => {
+    const format =
+      user?.profile?.venueFocus === 'live'
+        ? 'Live'
+        : user?.profile?.primaryGame === 'mtt'
+          ? 'MTT'
+          : 'Cash';
+    return `${format} · ${sessionPreset.stakes}`;
+  }, [sessionPreset.stakes, user?.profile?.primaryGame, user?.profile?.venueFocus]);
 
   const moneyCopy =
     moneyModal?.kind === 'setup'
@@ -227,71 +260,49 @@ export function DashboardScreen({
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={['#151A32', '#0B1020', '#080C18']}
-        locations={[0, 0.5, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-      <Animated.View style={[styles.orb, { opacity: glow }]} />
-      <Animated.View style={[styles.orbBrand, { opacity: glow }]} />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 10 }]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              void load();
-            }}
-            tintColor={dash.ops}
-          />
-        }
-      >
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="never"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.content, { paddingTop: 10 }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void load();
+              }}
+              tintColor={dash.ops}
+            />
+          }
+        >
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.kicker}>DAILY</Text>
-            <Text style={styles.title}>Command center</Text>
-            <Text style={styles.sub}>
-              {greeting}.{' '}
-              {bankrollReady
-                ? live
-                  ? 'Session live — log key hands.'
-                  : 'Bankroll, session, hands.'
-                : 'First step: enter your bankroll.'}
-            </Text>
-            {onOpenOnboarding ? (
-              <Pressable onPress={onOpenOnboarding} hitSlop={8}>
-                <Text style={styles.profileLink}>Edit player setup</Text>
+          <View>
+            <Text style={styles.kicker}>{todayLabel.toUpperCase()}</Text>
+            <Text style={styles.title}>Today</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <View style={styles.streakPill}>
+              <Ionicons name="flame" size={18} color={dash.brandSoft} />
+              <Text style={styles.streakText}>{snapshot.streakDays} day</Text>
+            </View>
+            {onOpenProfile ? (
+              <Pressable onPress={onOpenProfile} hitSlop={8} style={styles.profileButton}>
+                <Ionicons name="person-outline" size={25} color={dash.brandSoft} />
               </Pressable>
             ) : null}
           </View>
-          {bankrollReady ? (
-            <View style={styles.streakPill}>
-              <Text style={styles.streakText}>{snapshot.streakDays}d</Text>
-              <Text style={styles.streakLabel}>streak</Text>
-            </View>
-          ) : null}
         </View>
 
         {!bankrollReady || !snapshot.bankroll ? (
           <BankrollSetupCard onSetup={() => setMoneyModal({ kind: 'setup' })} />
         ) : (
           <>
-            <BankrollCard
-              bankroll={snapshot.bankroll}
-              todaysProfitCents={snapshot.todaysProfitCents}
-              onDeposit={() => setMoneyModal({ kind: 'deposit' })}
-              onWithdraw={() => setMoneyModal({ kind: 'withdraw' })}
-            />
-
             <DailyFocusCard
-              toReviewCount={toReviewCount}
-              lastSession={lastSession}
               goal={user?.profile?.goal}
-              currency={snapshot.bankroll.currency}
+              stakesLabel={sessionPreset.stakes}
               onOpenReviews={onOpenReviews}
+              onOpenDrills={onOpenDrills}
               onOpenCoach={onOpenCoachChat ?? onOpenCoachTab}
             />
 
@@ -302,45 +313,59 @@ export function DashboardScreen({
                 if (!session) return;
                 setEndOpen(true);
               }}
+              onLogHand={() => {
+                if (!session || session.status !== 'live') return;
+                setQuickHandOpen(true);
+              }}
+              suggestedFormatLabel={sessionFormatLabel}
+              suggestedBuyInCents={sessionPreset.buyInCents}
+            />
+
+            <TodaySnapshotCard
+              toReviewCount={toReviewCount}
+              lastSession={lastSession}
+              onOpenReviews={onOpenReviews}
+            />
+
+            {live ? (
+              <KeyHandsList
+                hands={session?.keyHands ?? []}
+                onAdd={() => setQuickHandOpen(true)}
+                onOpen={(hand) => {
+                  if (!session) return;
+                  void withBusy(async () => {
+                    const analyzed = await dashboardApi.analyzeKeyHand(session.id, hand.id);
+                    setSession({
+                      ...session,
+                      keyHands: session.keyHands.map((current) =>
+                        current.id === analyzed.id ? analyzed : current,
+                      ),
+                    });
+                    Alert.alert(
+                      analyzed.holeCards?.join(' ') ?? 'AI analysis',
+                      analyzed.aiAnalysis ?? analyzed.aiSummary ?? 'Done',
+                    );
+                  });
+                }}
+              />
+            ) : null}
+
+            <BankrollCard
+              bankroll={snapshot.bankroll}
+              todaysProfitCents={snapshot.todaysProfitCents}
+              onDeposit={() => setMoneyModal({ kind: 'deposit' })}
+              onWithdraw={() => setMoneyModal({ kind: 'withdraw' })}
+              onOpenHistory={() => setBankrollHistoryOpen(true)}
             />
 
             <AICoachPanel
-              onVoiceLog={onOpenCoachTab}
+              mode={live ? 'live' : toReviewCount > 0 ? 'review' : 'plan'}
               onOpenChat={onOpenCoachChat ?? onOpenCoachTab}
-            />
-
-            <KeyHandsList
-              hands={session?.keyHands ?? []}
-              onAdd={() => {
-                if (!session || session.status !== 'live') {
-                  Alert.alert('Start a session first');
-                  return;
-                }
-                setHandOpen(true);
-              }}
-              onOpen={(hand) => {
-                if (!session) return;
-                void withBusy(async () => {
-                  const analyzed = await dashboardApi.analyzeKeyHand(
-                    session.id,
-                    hand.id,
-                  );
-                  setSession({
-                    ...session,
-                    keyHands: session.keyHands.map((h) =>
-                      h.id === analyzed.id ? analyzed : h,
-                    ),
-                  });
-                  Alert.alert(
-                    analyzed.holeCards?.join(' ') ?? 'AI analysis',
-                    analyzed.aiAnalysis ?? analyzed.aiSummary ?? 'Done',
-                  );
-                });
-              }}
             />
           </>
         )}
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
 
       <MoneyFormModal
         visible={moneyModal != null}
@@ -353,9 +378,20 @@ export function DashboardScreen({
         onConfirm={onMoneyConfirm}
       />
 
+      <BankrollHistoryModal
+        visible={bankrollHistoryOpen}
+        bankroll={snapshot.bankroll}
+        onClose={() => setBankrollHistoryOpen(false)}
+      />
+
       <StartSessionModal
         visible={startOpen}
         initialChecklist={checklist}
+        initialStakes={sessionPreset.stakes}
+        initialBuyInCents={sessionPreset.buyInCents}
+        initialVenue={user?.profile?.venueFocus === 'live' ? 'live' : 'online'}
+        initialGameType={user?.profile?.primaryGame === 'mtt' ? 'mtt' : 'cash'}
+        bankrollCents={snapshot?.bankroll?.currentCents}
         onCancel={() => setStartOpen(false)}
         onConfirm={(input) => {
           setStartOpen(false);
@@ -370,19 +406,53 @@ export function DashboardScreen({
 
       <EndSessionModal
         visible={endOpen}
-        buyInCents={session?.buyInCents}
+        session={session}
         onCancel={() => setEndOpen(false)}
-        onConfirm={({ cashOutCents, tiltScore, energyLevel }) => {
+        onConfirm={({ cashOutCents, tiltScore, energyLevel, gameQuality }) => {
           if (!session) return;
           setEndOpen(false);
           void withBusy(async () => {
             await dashboardApi.updateMental(session.id, {
               tiltScore,
               energyLevel,
+              gameQuality,
             });
-            await dashboardApi.endSession(session.id, cashOutCents);
+            const ended = await dashboardApi.endSession(session.id, cashOutCents);
+            const fallbackRecommendation: DrillRecommendation = {
+              packId: 'open',
+              title: 'Your next drill',
+              reason: ended.keyHands.length ? `Built from ${ended.keyHands.length} hands you logged this session.` : 'A focused preflop refresh for your next session.',
+              difficulty: gameQuality === 'A' ? 'advanced' : gameQuality === 'C' ? 'foundation' : 'standard',
+              source: 'rules',
+            };
+            setCompleted({ session: ended, gameQuality, tiltScore, energyLevel, recommendation: fallbackRecommendation });
+            void dashboardApi.recommendDrill(ended.id).then((recommendation) => {
+              setCompleted((current) => current?.session.id === ended.id ? { ...current, recommendation } : current);
+            }).catch(() => undefined);
             await load();
           });
+        }}
+      />
+
+      <SessionCompleteModal
+        visible={completed != null}
+        session={completed?.session ?? null}
+        gameQuality={completed?.gameQuality ?? 'A'}
+        tiltScore={completed?.tiltScore ?? 2}
+        energyLevel={completed?.energyLevel ?? 6}
+        recommendation={completed?.recommendation}
+        onClose={() => setCompleted(null)}
+        onOpenReviews={() => onOpenReviews?.()}
+        onOpenDrills={() => onOpenDrills?.(completed ? { recommendation: completed.recommendation ?? undefined, sessionId: completed.session.id } : undefined)}
+        onShareCommunity={() => {
+          if (!completed) {
+            onOpenCommunity?.();
+            return;
+          }
+          void (async () => {
+            await prependUserCommunityPost(sessionToCommunityPost(completed.session, completed.gameQuality));
+            onOpenCommunity?.();
+          })();
         }}
       />
 
@@ -410,6 +480,48 @@ export function DashboardScreen({
           });
         }}
       />
+
+      <QuickHandLogModal
+        visible={quickHandOpen}
+        stakesLabel={session?.stakesLabel}
+        saving={quickHandSaving}
+        onCancel={() => setQuickHandOpen(false)}
+        onOpenDetailed={() => {
+          setQuickHandOpen(false);
+          setHandOpen(true);
+        }}
+        onSave={({ rawInput, tags, parsed }) => {
+          if (!session || quickHandSaving) return;
+          setQuickHandSaving(true);
+          const parsedPotType = parsed?.hand.potType;
+          const potType = parsedPotType && ['srp', '3bet', '4bet', '5bet', '6bet', 'iso', 'limped'].includes(parsedPotType)
+            ? parsedPotType as 'srp' | '3bet' | '4bet' | '5bet' | '6bet' | 'iso' | 'limped'
+            : undefined;
+          void dashboardApi.addKeyHand(session.id, {
+            source: parsed ? 'voice' : 'manual',
+            tags,
+            rawInput,
+            aiSummary: parsed?.hand.summary ?? rawInput,
+            stakes: session.stakesLabel,
+            heroPosition: parsed?.hand.heroPosition ?? undefined,
+            villainPositions: parsed?.hand.villainPositions,
+            holeCards: parsed?.hand.heroHoleCards,
+            board: parsed?.hand.board,
+            resultBb: parsed?.hand.resultBb ?? undefined,
+            potType,
+          }).then((hand) => {
+            setSession((current) => current?.id === session.id
+              ? { ...current, keyHands: [hand, ...current.keyHands] }
+              : current);
+            setQuickHandOpen(false);
+            setToReviewCount((count) => count + 1);
+          }).catch((error) => {
+            Alert.alert('Quick log', (error as Error).message || 'Could not save this hand.');
+          }).finally(() => {
+            setQuickHandSaving(false);
+          });
+        }}
+      />
     </View>
   );
 }
@@ -417,11 +529,12 @@ export function DashboardScreen({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: dash.bg,
+    backgroundColor: 'transparent',
   },
+  safeArea: { flex: 1 },
   center: {
     flex: 1,
-    backgroundColor: dash.bg,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -454,83 +567,55 @@ const styles = StyleSheet.create({
     color: dash.ctaText,
     fontFamily: fonts.bodyBold,
   },
-  orb: {
-    position: 'absolute',
-    top: -80,
-    right: -40,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(155, 107, 255, 0.1)',
-  },
-  orbBrand: {
-    position: 'absolute',
-    bottom: 120,
-    left: -70,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(77, 163, 255, 0.08)',
-  },
   content: {
     paddingHorizontal: 16,
-    gap: 14,
-    paddingBottom: 36,
+    gap: 10,
+    paddingBottom: 24,
   },
   header: {
     flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
     marginBottom: 2,
   },
   kicker: {
     color: dash.textMuted,
     fontFamily: fonts.bodyBold,
     fontSize: 11,
-    letterSpacing: 1.6,
+    letterSpacing: 1.5,
   },
   title: {
     color: dash.text,
     fontFamily: fonts.displayBold,
-    fontSize: 34,
-    letterSpacing: -0.8,
-    marginTop: 4,
+    fontSize: 38,
+    marginTop: 3,
   },
-  sub: {
-    color: dash.textSecondary,
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-    maxWidth: 260,
-  },
-  profileLink: {
-    marginTop: 8,
-    color: dash.opsSoft,
-    fontFamily: fonts.bodySemi,
-    fontSize: 13,
-  },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   streakPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
     borderRadius: 16,
     backgroundColor: 'rgba(155,107,255,0.12)',
     borderWidth: 1,
     borderColor: 'rgba(155,107,255,0.35)',
-    minWidth: 64,
-    marginTop: 4,
   },
   streakText: {
     color: dash.brandSoft,
-    fontFamily: fonts.displayBold,
-    fontSize: 18,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
   },
-  streakLabel: {
-    color: dash.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 10,
-    letterSpacing: 0.4,
+  profileButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(196,164,255,0.3)',
   },
 });

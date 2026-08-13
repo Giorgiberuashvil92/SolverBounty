@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CommunityPost } from '../types/community';
 import type { KeyHand } from '../types/session';
+import type { PokerSession } from '../types/session';
 import { ME_ID } from './mock/communityFeed';
 
 const STORAGE_KEY = 'poker.community.userPosts.v1';
@@ -90,4 +91,34 @@ export async function prependUserCommunityPost(
     /* ignore */
   }
   return next;
+}
+
+export function sessionToCommunityPost(
+  session: PokerSession,
+  gameQuality: 'A' | 'B' | 'C',
+): CommunityPost {
+  const result = session.profitLossCents ?? 0;
+  const bigBlindCents = Number(session.stakesLabel.replace(/^NL/i, '')) * 100;
+  const resultBb = bigBlindCents > 0 ? Math.round(result / bigBlindCents) : undefined;
+  const totalMinutes = Math.round(session.durationSeconds / 60);
+  const durationLabel = totalMinutes >= 60
+    ? `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`
+    : `${totalMinutes}m`;
+
+  return {
+    id: `post_session_${session.id}_${Date.now()}`,
+    authorId: ME_ID,
+    kind: 'day_share',
+    createdAt: new Date().toISOString(),
+    body: `${gameQuality}-game ${session.stakesLabel} session complete. ${result >= 0 ? '+' : ''}${resultBb ?? 0} bb with ${session.keyHands.length} hands logged for review.`,
+    dayLabel: 'Today',
+    sessionSummary: {
+      stakes: session.stakesLabel,
+      durationLabel,
+      resultBb,
+      handsCount: session.keyHands.length,
+    },
+    likes: 0,
+    comments: [],
+  };
 }

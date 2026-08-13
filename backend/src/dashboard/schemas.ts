@@ -169,6 +169,9 @@ export class PostSessionEmbed {
   energyLevel!: number;
 
   @Prop()
+  gameQuality?: 'A' | 'B' | 'C';
+
+  @Prop()
   notes?: string;
 
   @Prop({ default: true })

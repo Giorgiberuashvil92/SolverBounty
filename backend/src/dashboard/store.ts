@@ -10,7 +10,195 @@ import type {
   PokerSession as PokerSessionDto,
 } from './types';
 import { AnalyticsService } from '../analytics/analytics.service';
-import { analyzeHandWithLlm } from '../coach/llm';
+import { analyzeHandWithLlm, generateDrillWithLlm, recommendDrillWithLlm } from '../coach/llm';
+
+type DrillPackId = 'open' | '3bet' | 'defend' | 'cbet';
+
+export type DrillRecommendation = {
+  packId: DrillPackId;
+  title: string;
+  reason: string;
+  difficulty: 'foundation' | 'standard' | 'advanced';
+  source: 'ai' | 'rules';
+};
+
+type GeneratedDrillChoice = { id: string; label: string; quality: 'best' | 'ok' | 'leak' };
+type GeneratedDrill = {
+  id: string;
+  tag: 'open' | '3bet' | 'defend' | 'cbet' | 'squeeze';
+  stakesLabel: string;
+  stackBb: number;
+  heroPosition: string;
+  holeCards: [string, string];
+  board?: string[];
+  potBb?: number;
+  actors: Array<{ position: string; state: string; amountBb?: number }>;
+  actionLine: string;
+  prompt: string;
+  choices: GeneratedDrillChoice[];
+  explainBest: string;
+  explainOk?: string;
+  explainLeak?: string;
+};
+
+export type GeneratedDrillPlan = {
+  title: string;
+  subtitle: string;
+  drills: GeneratedDrill[];
+  source: 'ai';
+};
+
+const DRILL_PACK_IDS = new Set<DrillPackId>(['open', '3bet', 'defend', 'cbet']);
+
+function fallbackDrillRecommendation(session: PokerSessionDto): DrillRecommendation {
+  const hands = session.keyHands ?? [];
+  const tags = hands.flatMap((hand) => hand.tags ?? []).map((tag) => tag.toLowerCase());
+  const hasThreeBet = tags.some((tag) => tag.includes('3bet') || tag.includes('squeeze')) || hands.some((hand) => hand.potType === '3bet' || hand.potType === '4bet');
+  const hasLateStreet = hands.some((hand) => (hand.board?.length ?? 0) >= 3 || hand.actions?.some((action) => action.street === 'flop'));
+  const hasDefend = hands.some((hand) => hand.heroPosition === 'BB' || hand.heroPosition === 'SB');
+  const packId: DrillPackId = hasThreeBet ? '3bet' : hasLateStreet ? 'cbet' : hasDefend ? 'defend' : 'open';
+  const title = packId === '3bet' ? '3-Bet decision refresh' : packId === 'cbet' ? 'Flop c-bet refresh' : packId === 'defend' ? 'Blind defense refresh' : 'Preflop open refresh';
+  return {
+    packId,
+    title,
+    reason: hands.length ? `Based on ${hands.length} logged hand${hands.length === 1 ? '' : 's'} from this session.` : 'A focused warm-up for your next session.',
+    difficulty: session.postSession?.gameQuality === 'A' ? 'advanced' : session.postSession?.gameQuality === 'C' ? 'foundation' : 'standard',
+    source: 'rules',
+  };
+}
+
+const CARD_PATTERN = /^[2-9TJQKA][shdc]$/;
+const GENERATED_TAGS = new Set(['open', '3bet', 'defend', 'cbet', 'squeeze']);
+const ACTOR_STATES = new Set(['fold', 'wait', 'open', 'call', 'raise', '3bet', 'complete', 'check', 'toAct']);
+
+function asText(value: unknown, max = 240): string | null {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max ? value.trim() : null;
+}
+
+function normalizedTag(value: unknown): GeneratedDrill['tag'] | null {
+  if (typeof value !== 'string') return null;
+  const tag = value.toLowerCase().replace(/[\s_-]/g, '');
+  if (tag === '3bet') return '3bet';
+  if (tag === 'cbet') return 'cbet';
+  if (tag === 'squeeze') return 'squeeze';
+  if (tag === 'defend') return 'defend';
+  if (tag === 'open') return 'open';
+  return null;
+}
+
+function normalizedCard(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const compact = value
+    .trim()
+    .replace(/♠/g, 's')
+    .replace(/♥/g, 'h')
+    .replace(/♦/g, 'd')
+    .replace(/♣/g, 'c');
+  const card = `${compact[0]?.toUpperCase() ?? ''}${compact[1]?.toLowerCase() ?? ''}`;
+  return CARD_PATTERN.test(card) ? card : null;
+}
+
+function fallbackActors(heroPosition: string) {
+  const positions = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
+  return positions.map((position) => ({ position, state: position === heroPosition ? 'toAct' : 'fold' }));
+}
+
+function fallbackGeneratedDrill(tag: GeneratedDrill['tag'], index: number, stakesLabel: string): GeneratedDrill {
+  const id = `ai-fallback-${Date.now()}-${index}`;
+  if (tag === 'cbet') {
+    return {
+      id, tag, stakesLabel, stackBb: 100, heroPosition: 'BTN', holeCards: ['As', 'Kc'], board: ['9h', '5d', '2c'], potBb: 6,
+      actors: [{ position: 'UTG', state: 'fold' }, { position: 'HJ', state: 'fold' }, { position: 'CO', state: 'fold' }, { position: 'BTN', state: 'toAct' }, { position: 'SB', state: 'fold' }, { position: 'BB', state: 'check' }],
+      actionLine: 'You open BTN, BB calls. On a dry flop, BB checks.', prompt: 'What is your default plan?',
+      choices: [{ id: `${id}-a`, label: 'Bet 33% pot', quality: 'best' }, { id: `${id}-b`, label: 'Check back', quality: 'ok' }, { id: `${id}-c`, label: 'Bet 125% pot', quality: 'leak' }],
+      explainBest: 'A small c-bet is a practical default on this dry board because it pressures missed hands without risking too much.',
+      explainOk: 'Checking can be reasonable sometimes, especially against opponents who over-defend.',
+      explainLeak: 'An oversized bet uses too much risk for a spot that rarely needs it.',
+    };
+  }
+  if (tag === 'defend') {
+    return {
+      id, tag, stakesLabel, stackBb: 100, heroPosition: 'BB', holeCards: ['Kc', '9d'],
+      actors: [{ position: 'UTG', state: 'fold' }, { position: 'HJ', state: 'fold' }, { position: 'CO', state: 'fold' }, { position: 'BTN', state: 'open', amountBb: 2.5 }, { position: 'SB', state: 'fold' }, { position: 'BB', state: 'toAct' }],
+      actionLine: 'BTN opens to 2.5bb and SB folds.', prompt: 'What is your default defense?',
+      choices: [{ id: `${id}-a`, label: 'Call', quality: 'best' }, { id: `${id}-b`, label: '3-bet to 11bb', quality: 'ok' }, { id: `${id}-c`, label: 'Fold', quality: 'leak' }],
+      explainBest: 'With a playable king in the BB, calling is a sensible default against a wide button opening range.',
+      explainOk: 'A 3-bet can be mixed in when you have a clear plan for the response.',
+      explainLeak: 'Folding too many playable hands in the BB gives up favorable pot odds.',
+    };
+  }
+  if (tag === '3bet' || tag === 'squeeze') {
+    return {
+      id, tag, stakesLabel, stackBb: 100, heroPosition: 'BTN', holeCards: ['Ah', 'Qs'],
+      actors: [{ position: 'UTG', state: 'fold' }, { position: 'HJ', state: 'fold' }, { position: 'CO', state: 'open', amountBb: 2.5 }, { position: 'BTN', state: 'toAct' }, { position: 'SB', state: 'wait' }, { position: 'BB', state: 'wait' }],
+      actionLine: 'CO opens to 2.5bb. You are on BTN.', prompt: 'What is your default action?',
+      choices: [{ id: `${id}-a`, label: '3-bet to 8bb', quality: 'best' }, { id: `${id}-b`, label: 'Call', quality: 'ok' }, { id: `${id}-c`, label: 'Fold', quality: 'leak' }],
+      explainBest: 'A value 3-bet takes initiative and denies equity against a wide late-position open.',
+      explainOk: 'Calling in position can be workable, but leaves more difficult postflop decisions.',
+      explainLeak: 'Folding a strong ace-queen here is typically too conservative.',
+    };
+  }
+  return {
+    id, tag: 'open', stakesLabel, stackBb: 100, heroPosition: 'CO', holeCards: ['Jh', 'Th'],
+    actors: [{ position: 'UTG', state: 'fold' }, { position: 'HJ', state: 'fold' }, { position: 'CO', state: 'toAct' }, { position: 'BTN', state: 'wait' }, { position: 'SB', state: 'wait' }, { position: 'BB', state: 'wait' }],
+    actionLine: 'UTG and HJ fold. Action is on you in CO.', prompt: 'What is your default action?',
+    choices: [{ id: `${id}-a`, label: 'Raise 2.5bb', quality: 'best' }, { id: `${id}-b`, label: 'Limp', quality: 'ok' }, { id: `${id}-c`, label: 'Fold', quality: 'leak' }],
+    explainBest: 'Opening gives you initiative with a hand that has strong positional playability.',
+    explainOk: 'Limping can exist in unusual game conditions, but is less clear and harder to balance.',
+    explainLeak: 'Folding a playable suited connector from CO is overly cautious.',
+  };
+}
+
+function sanitizeGeneratedDrill(value: unknown, index: number, stakesLabel: string): GeneratedDrill {
+  const raw = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const tag = normalizedTag(raw.tag) ?? (index % 4 === 0 ? 'open' : index % 4 === 1 ? '3bet' : index % 4 === 2 ? 'defend' : 'cbet');
+  const fallback = fallbackGeneratedDrill(tag, index, stakesLabel);
+  const parsedCards = Array.isArray(raw.holeCards) && raw.holeCards.length === 2 ? raw.holeCards.map(normalizedCard) : [];
+  const holeCards = parsedCards.length === 2 && parsedCards.every((card): card is string => card != null)
+    ? parsedCards as [string, string]
+    : fallback.holeCards;
+  const choices = Array.isArray(raw.choices) ? raw.choices.map((choice, choiceIndex) => {
+    const item = choice as Record<string, unknown>;
+    const label = asText(item.label, 60);
+    const quality = item.quality;
+    return label && (quality === 'best' || quality === 'ok' || quality === 'leak')
+      ? { id: `ai-${index}-${choiceIndex}`, label, quality }
+      : null;
+  }).filter((choice): choice is GeneratedDrillChoice => choice != null) : [];
+  const actors: GeneratedDrill['actors'] = Array.isArray(raw.actors)
+    ? raw.actors.reduce<GeneratedDrill['actors']>((validActors, actor) => {
+        const item = actor as Record<string, unknown>;
+        const position = asText(item.position, 8);
+        const rawState = typeof item.state === 'string' ? item.state.toLowerCase().replace('folded', 'fold').replace('hero', 'toAct') : '';
+        const state = ACTOR_STATES.has(rawState) ? rawState : null;
+        if (!position || !state) return validActors;
+        const amountBb = typeof item.amountBb === 'number' && Number.isFinite(item.amountBb) ? item.amountBb : undefined;
+        validActors.push(amountBb == null ? { position, state } : { position, state, amountBb });
+        return validActors;
+      }, [])
+    : [];
+  const boardValues = Array.isArray(raw.board) && raw.board.length >= 3 && raw.board.length <= 5 ? raw.board.map(normalizedCard) : [];
+  const board = boardValues.length >= 3 && boardValues.every((card): card is string => card != null) ? boardValues : fallback.board;
+  const heroPosition = asText(raw.heroPosition, 8) ?? fallback.heroPosition;
+  const normalizedChoices = choices.length === 3 && choices.filter((choice) => choice.quality === 'best').length === 1 ? choices : fallback.choices;
+  return {
+    id: `ai-session-${Date.now()}-${index}`,
+    tag,
+    stakesLabel: asText(raw.stakesLabel, 24) ?? fallback.stakesLabel,
+    stackBb: typeof raw.stackBb === 'number' && raw.stackBb >= 20 && raw.stackBb <= 200 ? Math.round(raw.stackBb) : 100,
+    heroPosition,
+    holeCards,
+    board,
+    potBb: typeof raw.potBb === 'number' && raw.potBb > 0 && raw.potBb <= 500 ? raw.potBb : fallback.potBb,
+    actors: actors.length >= 2 ? actors : fallbackActors(heroPosition),
+    actionLine: asText(raw.actionLine) ?? fallback.actionLine,
+    prompt: asText(raw.prompt, 100) ?? fallback.prompt,
+    choices: normalizedChoices,
+    explainBest: asText(raw.explainBest) ?? asText(raw.explanation) ?? fallback.explainBest,
+    explainOk: asText(raw.explainOk) ?? fallback.explainOk,
+    explainLeak: asText(raw.explainLeak) ?? fallback.explainLeak,
+  };
+}
 
 function todayKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -68,6 +256,7 @@ export function toSessionDto(doc: PokerSession): PokerSessionDto {
       ? {
           tiltScore: doc.postSession.tiltScore,
           energyLevel: doc.postSession.energyLevel,
+          gameQuality: doc.postSession.gameQuality,
           notes: doc.postSession.notes,
           reviewCompleted: doc.postSession.reviewCompleted,
           completedAt: doc.postSession.completedAt,
@@ -314,9 +503,9 @@ export class DashboardStore {
     );
     const profitLossCents = cashOutCents - session.buyInCents;
     const hourlyRateCents =
-      durationSeconds > 0
+      durationSeconds >= 15 * 60
         ? Math.round(profitLossCents / (durationSeconds / 3600))
-        : 0;
+        : undefined;
 
     session.status = 'ended';
     session.endedAt = now;
@@ -352,6 +541,67 @@ export class DashboardStore {
     return toSessionDto(session.toObject());
   }
 
+  async recommendDrill(userId: string, sessionId: string): Promise<DrillRecommendation> {
+    const session = await this.requireOwnedSession(userId, sessionId);
+    const dto = toSessionDto(session.toObject());
+    const fallback = fallbackDrillRecommendation(dto);
+    const payload = JSON.stringify({
+      stakes: dto.stakesLabel,
+      gameType: dto.gameType,
+      venue: dto.venue,
+      gameQuality: dto.postSession?.gameQuality ?? null,
+      handCount: dto.keyHands.length,
+      hands: dto.keyHands.map((hand) => ({
+        tags: hand.tags,
+        heroPosition: hand.heroPosition,
+        potType: hand.potType,
+        streets: hand.actions?.map((action) => action.street) ?? [],
+        boardCards: hand.board?.length ?? 0,
+      })),
+      allowedPacks: ['open', '3bet', 'defend', 'cbet'],
+    });
+    const ai = await recommendDrillWithLlm(this.config, payload);
+    const packId = typeof ai?.packId === 'string' && DRILL_PACK_IDS.has(ai.packId as DrillPackId)
+      ? ai.packId as DrillPackId
+      : fallback.packId;
+    const title = typeof ai?.title === 'string' && ai.title.length <= 60 ? ai.title.trim() : fallback.title;
+    const reason = typeof ai?.reason === 'string' && ai.reason.length <= 180 ? ai.reason.trim() : fallback.reason;
+    const difficulty = ai?.difficulty === 'foundation' || ai?.difficulty === 'standard' || ai?.difficulty === 'advanced'
+      ? ai.difficulty
+      : fallback.difficulty;
+    return { packId, title, reason, difficulty, source: ai ? 'ai' : 'rules' };
+  }
+
+  async generateDrill(userId: string, sessionId: string): Promise<GeneratedDrillPlan> {
+    const session = await this.requireOwnedSession(userId, sessionId);
+    const dto = toSessionDto(session.toObject());
+    const payload = JSON.stringify({
+      stakes: dto.stakesLabel,
+      gameType: dto.gameType,
+      venue: dto.venue,
+      gameQuality: dto.postSession?.gameQuality ?? null,
+      sessionHands: dto.keyHands.map((hand) => ({
+        heroPosition: hand.heroPosition,
+        villainPositions: hand.villainPositions,
+        potType: hand.potType,
+        boardCards: hand.board?.length ?? 0,
+        tags: hand.tags,
+        streets: hand.actions?.map((action) => action.street) ?? [],
+      })),
+    });
+    const ai = await generateDrillWithLlm(this.config, payload);
+    const rawDrills = Array.isArray(ai?.drills) ? ai.drills.slice(0, 5) : [];
+    const drills = Array.from({ length: 5 }, (_, index) =>
+      sanitizeGeneratedDrill(rawDrills[index], index, dto.stakesLabel),
+    );
+    return {
+      title: asText(ai?.title, 60) ?? 'AI session drill',
+      subtitle: asText(ai?.subtitle, 160) ?? 'Five new spots generated from your session themes.',
+      drills,
+      source: 'ai',
+    };
+  }
+
   async updateChecklist(
     userId: string,
     sessionId: string,
@@ -370,12 +620,13 @@ export class DashboardStore {
   async updateMental(
     userId: string,
     sessionId: string,
-    mental: { tiltScore: number; energyLevel: number; notes?: string },
+    mental: { tiltScore: number; energyLevel: number; gameQuality?: 'A' | 'B' | 'C'; notes?: string },
   ) {
     const session = await this.requireOwnedSession(userId, sessionId);
     session.postSession = {
       tiltScore: mental.tiltScore,
       energyLevel: mental.energyLevel,
+      gameQuality: mental.gameQuality,
       notes: mental.notes,
       reviewCompleted: true,
       completedAt: new Date().toISOString(),
@@ -455,6 +706,7 @@ export class DashboardStore {
         startedAt: dto.startedAt,
         endedAt: dto.endedAt,
         profitLossCents: dto.profitLossCents,
+        buyInCents: dto.buyInCents,
         durationSeconds: dto.durationSeconds,
         keyHandsCount: dto.keyHands.length,
         toReviewCount: dto.keyHands.filter((h) => h.reviewStatus !== 'reviewed')

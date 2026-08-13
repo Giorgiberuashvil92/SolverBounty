@@ -7,19 +7,30 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { dash } from '../../theme/dashboard';
 import { fonts } from '../../theme/typography';
-import { formatDuration, formatMoney, hourlyRateCents } from '../../utils/money';
+import { formatDuration, formatMoney, hourlyRateCents, MIN_HOURLY_DURATION_SECONDS } from '../../utils/money';
 import type { PokerSession } from '../../types/session';
 
 type SessionTrackerProps = {
   session: PokerSession | null;
   onStart: () => void;
   onEnd: () => void;
+  onLogHand?: () => void;
+  suggestedFormatLabel: string;
+  suggestedBuyInCents: number;
 };
 
-export function SessionTracker({ session, onStart, onEnd }: SessionTrackerProps) {
+export function SessionTracker({
+  session,
+  onStart,
+  onEnd,
+  onLogHand,
+  suggestedFormatLabel,
+  suggestedBuyInCents,
+}: SessionTrackerProps) {
   const live = session?.status === 'live';
   const [tick, setTick] = useState(session?.durationSeconds ?? 0);
   const pulse = useRef(new Animated.Value(0)).current;
@@ -61,10 +72,12 @@ export function SessionTracker({ session, onStart, onEnd }: SessionTrackerProps)
     return () => loop.stop();
   }, [live, pulse]);
 
-  const buyIn = session?.buyInCents ?? 0;
+  const buyIn = session?.buyInCents ?? suggestedBuyInCents;
   const estimatedPl = session?.profitLossCents;
   const rate =
-    estimatedPl != null ? hourlyRateCents(estimatedPl, Math.max(tick, 1)) : null;
+    estimatedPl != null && tick >= MIN_HOURLY_DURATION_SECONDS
+      ? hourlyRateCents(estimatedPl, tick)
+      : null;
 
   const dotOpacity = pulse.interpolate({
     inputRange: [0, 1],
@@ -72,10 +85,10 @@ export function SessionTracker({ session, onStart, onEnd }: SessionTrackerProps)
   });
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, !live && styles.idleShell]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.label}>SESSION</Text>
+          <Text style={styles.label}>{live ? 'LIVE SESSION' : 'NEXT SESSION'}</Text>
           <Text style={styles.title}>
             {live ? `${session?.stakesLabel} on the clock` : 'Ready when you are'}
           </Text>
@@ -88,32 +101,62 @@ export function SessionTracker({ session, onStart, onEnd }: SessionTrackerProps)
         </View>
       </View>
 
-      <Text style={styles.timer}>{formatDuration(tick)}</Text>
-
-      <View style={styles.stats}>
-        <Stat label="Buy-in" value={session ? formatMoney(buyIn, session.currency) : '—'} />
-        <Stat
-          label="Cash-out"
-          value={
-            session?.cashOutCents != null
-              ? formatMoney(session.cashOutCents, session.currency)
-              : '—'
-          }
-        />
-        <Stat
-          label="$/hr"
-          value={rate != null && session ? formatMoney(rate, session.currency) : '—'}
-          accent
-        />
-      </View>
+      {live ? (
+        <Text
+          adjustsFontSizeToFit
+          minimumFontScale={0.72}
+          numberOfLines={1}
+          style={styles.timer}
+        >
+          {formatDuration(tick)}
+        </Text>
+      ) : (
+        <Text style={styles.ready}>Ready to play</Text>
+      )}
 
       {live ? (
-        <Pressable
-          onPress={onEnd}
-          style={({ pressed }) => [styles.ctaEnd, pressed && styles.pressed]}
-        >
-          <Text style={styles.ctaEndText}>End session</Text>
-        </Pressable>
+        <View style={styles.stats}>
+          <Stat label="Logged" value={String(session?.keyHands.length ?? 0)} />
+          <Stat label="Buy-in" value={formatMoney(buyIn, session?.currency)} />
+          <Stat
+            label="$/hr"
+            value={rate != null && session ? formatMoney(rate, session.currency) : '—'}
+            accent
+          />
+        </View>
+      ) : (
+        <View style={styles.presetRow}>
+          <Pressable onPress={onStart} style={styles.preset}>
+            <Ionicons name="layers-outline" size={21} color={dash.opsSoft} />
+            <Text style={styles.presetValue}>{suggestedFormatLabel}</Text>
+            <Ionicons name="create-outline" size={16} color={dash.opsSoft} />
+          </Pressable>
+          <Pressable onPress={onStart} style={styles.preset}>
+            <Ionicons name="cash-outline" size={21} color={dash.opsSoft} />
+            <Text style={styles.presetValue}>
+              Buy-in {formatMoney(suggestedBuyInCents)}
+            </Text>
+            <Ionicons name="create-outline" size={16} color={dash.opsSoft} />
+          </Pressable>
+        </View>
+      )}
+
+      {live ? (
+        <View style={styles.liveActions}>
+          <Pressable
+            onPress={onLogHand}
+            style={({ pressed }) => [styles.ctaLog, pressed && styles.pressed]}
+          >
+            <Ionicons name="flash-outline" size={17} color={dash.ctaText} />
+            <Text style={styles.ctaLogText}>Quick log</Text>
+          </Pressable>
+          <Pressable
+            onPress={onEnd}
+            style={({ pressed }) => [styles.ctaEnd, pressed && styles.pressed]}
+          >
+            <Text style={styles.ctaEndText}>End</Text>
+          </Pressable>
+        </View>
       ) : (
         <Pressable onPress={onStart} style={({ pressed }) => [pressed && styles.pressed]}>
           <LinearGradient
@@ -149,13 +192,14 @@ function Stat({
 
 const styles = StyleSheet.create({
   shell: {
-    borderRadius: 24,
+    borderRadius: 16,
     backgroundColor: dash.surface,
     borderWidth: 1,
     borderColor: dash.border,
-    padding: 18,
-    gap: 12,
+    padding: 12,
+    gap: 8,
   },
+  idleShell: { minHeight: 194, justifyContent: 'space-between' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -164,13 +208,13 @@ const styles = StyleSheet.create({
   label: {
     color: dash.opsSoft,
     fontFamily: fonts.bodyBold,
-    fontSize: 11,
-    letterSpacing: 1.8,
+    fontSize: 10,
+    letterSpacing: 1.4,
   },
   title: {
     color: dash.text,
     fontFamily: fonts.display,
-    fontSize: 20,
+    fontSize: 19,
     marginTop: 2,
     letterSpacing: -0.3,
   },
@@ -178,8 +222,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
   },
@@ -206,25 +250,45 @@ const styles = StyleSheet.create({
   badgeText: {
     color: dash.textSecondary,
     fontFamily: fonts.bodyBold,
-    fontSize: 11,
+    fontSize: 10,
     letterSpacing: 0.8,
   },
   timer: {
     color: dash.text,
     fontFamily: fonts.displayBold,
-    fontSize: 48,
-    letterSpacing: 1,
-    lineHeight: 52,
+    fontSize: 38,
+    letterSpacing: 0,
+    lineHeight: 44,
+  },
+  ready: {
+    color: dash.text,
+    fontFamily: fonts.displayBold,
+    fontSize: 22,
+    lineHeight: 27,
   },
   stats: {
     flexDirection: 'row',
     gap: 8,
   },
+  presetRow: { flexDirection: 'row', gap: 8 },
+  preset: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: dash.borderStrong,
+    borderRadius: 10,
+    backgroundColor: 'rgba(8,4,18,0.35)',
+  },
+  presetValue: { flex: 1, color: dash.textSecondary, fontFamily: fonts.bodySemi, fontSize: 13 },
   stat: {
     flex: 1,
     backgroundColor: 'rgba(8,4,18,0.45)',
     borderRadius: 14,
-    padding: 12,
+    padding: 9,
     gap: 3,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
@@ -240,31 +304,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   ctaStart: {
-    borderRadius: 999,
-    paddingVertical: 15,
+    borderRadius: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    shadowColor: dash.ops,
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 0 },
   },
   ctaStartText: {
     color: dash.ctaText,
     fontFamily: fonts.bodyBold,
-    fontSize: 15,
+    fontSize: 14,
+  },
+  liveActions: { flexDirection: 'row', gap: 8 },
+  ctaLog: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+    backgroundColor: dash.cta,
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  ctaLogText: {
+    color: dash.ctaText,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
   },
   ctaEnd: {
-    borderRadius: 999,
-    paddingVertical: 15,
+    minWidth: 84,
+    borderRadius: 10,
+    paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,77,77,0.4)',
+    borderColor: 'rgba(255,255,255,0.14)',
   },
   ctaEndText: {
-    color: dash.loss,
+    color: dash.textSecondary,
     fontFamily: fonts.bodyBold,
-    fontSize: 15,
+    fontSize: 14,
   },
   pressed: {
     opacity: 0.9,

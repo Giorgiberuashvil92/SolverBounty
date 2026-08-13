@@ -25,9 +25,14 @@ export class HuMatchmaker {
   enqueue(
     player: QueuePlayer,
   ): { waiting: true } | { matched: true; a: QueuePlayer; b: QueuePlayer } {
-    this.dequeue(player.userId);
-    this.queue = this.queue.filter((p) => p.userId !== player.userId);
-    this.queue.push({ ...player, enqueuedAt: Date.now() });
+    const existingIndex = this.queue.findIndex((queued) => queued.userId === player.userId);
+    if (existingIndex >= 0) {
+      // Reconnects and duplicate client emits must not move a player behind a newcomer.
+      const existing = this.queue[existingIndex]!;
+      this.queue[existingIndex] = { ...existing, ...player, enqueuedAt: existing.enqueuedAt };
+    } else {
+      this.queue.push({ ...player, enqueuedAt: Date.now() });
+    }
 
     if (this.queue.length >= 2) {
       const a = this.queue.shift()!;

@@ -57,7 +57,7 @@ export function NeonTabBar({ active, onChange }: NeonTabBarProps) {
                 <TabIcon
                   name={tab.key}
                   color={isActive ? dash.opsSoft : 'rgba(255,255,255,0.42)'}
-                  size={22}
+                  size={20}
                   active={isActive}
                 />
                 <Text
@@ -79,11 +79,11 @@ export function NeonTabBar({ active, onChange }: NeonTabBarProps) {
 const styles = StyleSheet.create({
   wrap: {
     paddingHorizontal: 12,
-    paddingTop: 4,
+    paddingTop: 3,
     backgroundColor: 'transparent',
   },
   dockShadow: {
-    borderRadius: 22,
+    borderRadius: 18,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -100,9 +100,9 @@ const styles = StyleSheet.create({
   dock: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    borderRadius: 22,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    borderRadius: 18,
+    paddingHorizontal: 3,
+    paddingVertical: 3,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     overflow: 'hidden',
@@ -119,10 +119,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
-    paddingBottom: 6,
-    borderRadius: 16,
-    gap: 5,
+    paddingTop: 6,
+    paddingBottom: 4,
+    borderRadius: 13,
+    gap: 3,
     overflow: 'hidden',
   },
   itemActive: {
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   label: {
     color: 'rgba(255, 255, 255, 0.42)',
     fontFamily: fonts.bodyMedium,
-    fontSize: 10,
+    fontSize: 9,
     letterSpacing: 0.2,
   },
   labelActive: {

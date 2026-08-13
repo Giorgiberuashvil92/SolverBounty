@@ -6,7 +6,7 @@ export type TabItem = {
 };
 
 export const TABS: TabItem[] = [
-  { key: 'daily', label: 'Daily' },
+  { key: 'daily', label: 'Today' },
   { key: 'community', label: 'Community' },
   { key: 'coach', label: 'Coach' },
   { key: 'reviews', label: 'Reviews' },

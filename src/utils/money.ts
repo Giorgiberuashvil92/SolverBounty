@@ -1,5 +1,7 @@
 import type { MoneyCents } from '../types/session';
 
+export const MIN_HOURLY_DURATION_SECONDS = 15 * 60;
+
 export function formatMoney(cents: MoneyCents, currency = 'USD'): string {
   const value = cents / 100;
   const abs = Math.abs(value);

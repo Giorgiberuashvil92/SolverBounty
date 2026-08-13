@@ -35,6 +35,7 @@ export type PreSessionChecklist = {
 export type PostSessionMental = {
   tiltScore: number; // 1–10 (10 = severe tilt)
   energyLevel: number; // 1–10
+  gameQuality?: 'A' | 'B' | 'C';
   notes?: string;
   reviewCompleted: boolean;
   completedAt?: string;

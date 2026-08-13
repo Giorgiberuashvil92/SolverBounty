@@ -106,7 +106,7 @@ export function ThreadView({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: dash.bg,
+    backgroundColor: 'transparent',
   },
   top: {
     flexDirection: 'row',

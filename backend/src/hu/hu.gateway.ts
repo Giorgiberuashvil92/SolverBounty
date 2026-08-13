@@ -90,6 +90,10 @@ export class HuGateway
       displayName,
       socketId: client.id,
     });
+    if (result.status === 'matched' || result.status === 'rejoined') {
+      const view = this.hu.viewForUser(userId);
+      if (view) client.emit('table_state', view);
+    }
     return { ok: true, ...result };
   }
 

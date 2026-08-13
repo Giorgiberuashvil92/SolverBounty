@@ -11,6 +11,7 @@ import {
   heuristicParseHand,
   parseHandWithLlm,
   streamChatWithLlm,
+  transcribeAudioWithLlm,
 } from './llm';
 import type { ChatDto, ParseHandDto } from './coach.dto';
 
@@ -227,6 +228,26 @@ export class CoachService {
     });
 
     return result;
+  }
+
+  async transcribeHand(
+    userId: string,
+    audio: { buffer: Buffer; mimetype?: string; originalname?: string },
+    stakes?: string,
+  ) {
+    const transcript = await transcribeAudioWithLlm(this.config, {
+      buffer: audio.buffer,
+      mimetype: audio.mimetype,
+      filename: audio.originalname,
+    });
+    if (!transcript) throw new Error('Could not transcribe this recording');
+
+    const parsed = await this.parseHand(userId, { transcript, stakes });
+    await this.analytics.track(userId, 'coach_voice_hand', {
+      transcriptLength: transcript.length,
+      confidence: (parsed as { confidence?: number }).confidence,
+    });
+    return { transcript, parsed };
   }
 
   private toDto(thread: CoachThread) {

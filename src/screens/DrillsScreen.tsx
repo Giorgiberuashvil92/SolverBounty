@@ -14,6 +14,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { arenaApi, type ArenaSeason } from '../api/arenaApi';
 import { useAuth } from '../auth/AuthContext';
 import { DrillLeaderboardModal } from '../components/drills/DrillLeaderboardModal';
@@ -38,6 +39,8 @@ import { HuTableScreen } from './HuTableScreen';
 import { dash } from '../theme/dashboard';
 import { fonts } from '../theme/typography';
 import { formatMoney } from '../utils/money';
+import { dashboardApi, type DrillRecommendation } from '../api/dashboardApi';
+import type { GeneratedDrillPlan } from '../api/dashboardApi';
 
 const SCORE_KEY = '@pokeraicoach/drills_week_v1';
 
@@ -97,14 +100,17 @@ function scoreFromSeason(season: ArenaSeason, day: string): WeekScore {
 type Session =
   | { kind: 'ranked' }
   | { kind: 'practice'; packId: DrillPackId }
+  | { kind: 'ai'; plan: GeneratedDrillPlan }
   | { kind: 'hu' }
   | null;
 
 type DrillsProps = {
   onImmersiveChange?: (immersive: boolean) => void;
+  recommendation?: DrillRecommendation | null;
+  recommendationSessionId?: string | null;
 };
 
-export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
+export function DrillsScreen({ onImmersiveChange, recommendation, recommendationSessionId }: DrillsProps = {}) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const day = todayKey();
@@ -114,6 +120,7 @@ export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
   const [boardOpen, setBoardOpen] = useState(false);
   const [rangesOpen, setRangesOpen] = useState(false);
   const [session, setSession] = useState<Session>(null);
+  const [generatingAiDrill, setGeneratingAiDrill] = useState(false);
   const float = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const deal = useRef(new Animated.Value(0)).current;
@@ -314,7 +321,6 @@ export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
   if (!ready) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
-        <LinearGradient colors={['#151A32', dash.bg]} style={StyleSheet.absoluteFill} />
         <ActivityIndicator color={dash.cta} style={{ marginTop: 40 }} />
       </View>
     );
@@ -366,6 +372,31 @@ export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
     );
   }
 
+  if (session?.kind === 'ai') {
+    return (
+      <DrillPlaySession
+        mode="practice"
+        title={session.plan.title}
+        subtitle={`${session.plan.subtitle} · AI generated`}
+        deck={session.plan.drills}
+        onExit={() => setSession(null)}
+        onFinished={() => undefined}
+      />
+    );
+  }
+
+  const startAiDrill = async () => {
+    if (!recommendationSessionId || generatingAiDrill) return;
+    setGeneratingAiDrill(true);
+    try {
+      setSession({ kind: 'ai', plan: await dashboardApi.generateDrill(recommendationSessionId) });
+    } catch (error) {
+      Alert.alert('AI drill', (error as Error).message || 'Could not create this drill yet.');
+    } finally {
+      setGeneratingAiDrill(false);
+    }
+  };
+
   const floatY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
   const floatY2 = float.interpolate({ inputRange: [0, 1], outputRange: [0, 9] });
   const cardTilt = deal.interpolate({ inputRange: [0, 1], outputRange: ['-8deg', '6deg'] });
@@ -375,14 +406,6 @@ export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={['#151A32', dash.bg, '#080C18']}
-        locations={[0, 0.55, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.orbBlue} pointerEvents="none" />
-      <View style={styles.orbPurple} pointerEvents="none" />
-
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -403,6 +426,26 @@ export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
             <Text style={styles.rangesChipText}>Ranges</Text>
           </Pressable>
         </View>
+
+        {recommendation ? (
+          <View style={styles.aiRecommendation}>
+            <View style={styles.aiRecommendationIcon}>
+              <Ionicons name="sparkles" size={18} color={dash.brandSoft} />
+            </View>
+            <View style={styles.aiRecommendationCopy}>
+              <Text style={styles.aiRecommendationEyebrow}>AI SESSION DRILL · {recommendation.difficulty.toUpperCase()}</Text>
+              <Text numberOfLines={1} style={styles.aiRecommendationTitle}>{recommendation.title}</Text>
+              <Text numberOfLines={2} style={styles.aiRecommendationBody}>{recommendation.reason}</Text>
+            </View>
+            <Pressable
+              disabled={!recommendationSessionId || generatingAiDrill}
+              onPress={() => void startAiDrill()}
+              style={[styles.aiRecommendationButton, (!recommendationSessionId || generatingAiDrill) && styles.aiRecommendationButtonDisabled]}
+            >
+              <Text style={styles.aiRecommendationButtonText}>{generatingAiDrill ? 'Making...' : 'Create'}</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* HU stage — bankroll palette + floating cards */}
         <Pressable
@@ -639,25 +682,7 @@ export function DrillsScreen({ onImmersiveChange }: DrillsProps = {}) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: dash.bg },
-  orbBlue: {
-    position: 'absolute',
-    top: -40,
-    right: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: dash.glowBlue,
-  },
-  orbPurple: {
-    position: 'absolute',
-    top: 180,
-    left: -80,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: dash.glowPurple,
-  },
+  root: { flex: 1, backgroundColor: 'transparent' },
   content: {
     paddingHorizontal: 16,
     gap: 14,
@@ -667,6 +692,42 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
+  aiRecommendation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(155,107,255,0.38)',
+    backgroundColor: 'rgba(65,41,111,0.48)',
+    padding: 11,
+  },
+  aiRecommendationIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    backgroundColor: 'rgba(155,107,255,0.2)',
+  },
+  aiRecommendationCopy: { flex: 1, minWidth: 0, gap: 2 },
+  aiRecommendationEyebrow: {
+    color: dash.brandSoft,
+    fontFamily: fonts.bodyBold,
+    fontSize: 9,
+    letterSpacing: 1.1,
+  },
+  aiRecommendationTitle: { color: dash.text, fontFamily: fonts.bodyBold, fontSize: 14 },
+  aiRecommendationBody: { color: dash.textSecondary, fontFamily: fonts.body, fontSize: 11, lineHeight: 15 },
+  aiRecommendationButton: {
+    borderWidth: 1,
+    borderColor: dash.ops,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  aiRecommendationButtonText: { color: dash.opsSoft, fontFamily: fonts.bodyBold, fontSize: 11 },
+  aiRecommendationButtonDisabled: { opacity: 0.55 },
   brand: {
     color: dash.brandSoft,
     fontFamily: fonts.bodyBold,

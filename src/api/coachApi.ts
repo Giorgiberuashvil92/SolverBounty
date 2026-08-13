@@ -44,6 +44,11 @@ export type ParsedHandResult = {
   };
 };
 
+export type VoiceHandResult = {
+  transcript: string;
+  parsed: ParsedHandResult;
+};
+
 type StreamHandlers = {
   onDelta: (delta: string) => void;
 };
@@ -138,4 +143,25 @@ export const coachApi = {
       method: 'POST',
       body: JSON.stringify({ transcript, stakes }),
     }),
+
+  transcribeHand: async (uri: string, stakes?: string): Promise<VoiceHandResult> => {
+    const token = await getAccessToken();
+    const body = new FormData();
+    body.append('audio', {
+      uri,
+      name: 'hand.m4a',
+      type: 'audio/m4a',
+    } as unknown as Blob);
+    if (stakes) body.append('stakes', stakes);
+    const response = await fetch(`${API_BASE}/coach/transcribe-hand`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({})) as { message?: string | string[] };
+      throw new Error(Array.isArray(error.message) ? error.message.join(', ') : error.message || 'Voice transcription failed');
+    }
+    return response.json() as Promise<VoiceHandResult>;
+  },
 };

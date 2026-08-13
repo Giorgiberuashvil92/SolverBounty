@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { dash } from '../../theme/dashboard';
 import { fonts } from '../../theme/typography';
 import { formatMoney, formatSignedMoney } from '../../utils/money';
@@ -10,6 +10,7 @@ type BankrollCardProps = {
   todaysProfitCents: number;
   onDeposit?: () => void;
   onWithdraw?: () => void;
+  onOpenHistory?: () => void;
 };
 
 export function BankrollCard({
@@ -17,168 +18,71 @@ export function BankrollCard({
   todaysProfitCents,
   onDeposit,
   onWithdraw,
+  onOpenHistory,
 }: BankrollCardProps) {
-  const dayDelta = bankroll.currentCents - bankroll.startingOfDayCents;
-  const dayColor = dayDelta >= 0 ? dash.profit : dash.loss;
   const todayColor = todaysProfitCents >= 0 ? dash.profit : dash.loss;
 
   return (
-    <LinearGradient
-      colors={['rgba(77,163,255,0.1)', dash.surfaceRaised, dash.surface]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.shell}
-    >
-      <View style={styles.top}>
+    <View style={styles.shell}>
+      <View style={styles.iconWrap}>
+        <Ionicons name="wallet-outline" size={25} color={dash.opsSoft} />
+      </View>
+      <Pressable onPress={onOpenHistory} style={styles.copy}>
         <Text style={styles.label}>BANKROLL</Text>
-        <Text style={[styles.pill, { color: dayColor, borderColor: `${dayColor}55` }]}>
-          Day {formatSignedMoney(dayDelta, bankroll.currency)}
-        </Text>
-      </View>
-
-      <Text style={styles.total}>{formatMoney(bankroll.currentCents, bankroll.currency)}</Text>
-      <Text style={styles.caption}>Command center · effective roll</Text>
-
-      <View style={styles.metrics}>
-        <View style={styles.metric}>
-          <Text style={styles.metricLabel}>Session P/L</Text>
-          <Text style={[styles.metricValue, { color: todayColor }]}>
-            {formatSignedMoney(todaysProfitCents, bankroll.currency)}
-          </Text>
+        <View style={styles.amountRow}>
+          <Text style={styles.total}>{formatMoney(bankroll.currentCents, bankroll.currency)}</Text>
+          <Text style={[styles.today, { color: todayColor }]}>Today {formatSignedMoney(todaysProfitCents, bankroll.currency)}</Text>
         </View>
-        <View style={styles.divider} />
-        <View style={styles.metric}>
-          <Text style={styles.metricLabel}>Start of day</Text>
-          <Text style={styles.metricValue}>
-            {formatMoney(bankroll.startingOfDayCents, bankroll.currency)}
-          </Text>
-        </View>
-      </View>
-
+      </Pressable>
       <View style={styles.actions}>
-        <Pressable
-          onPress={onDeposit}
-          style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-        >
-          <Text style={styles.btnText}>Deposit</Text>
+        <Pressable onPress={onDeposit} hitSlop={5} style={styles.action}>
+          <Text style={styles.depositText}>Deposit</Text>
         </Pressable>
-        <Pressable
-          onPress={onWithdraw}
-          style={({ pressed }) => [styles.btnGhost, pressed && styles.pressed]}
-        >
-          <Text style={styles.btnGhostText}>Withdraw</Text>
+        <Pressable onPress={onWithdraw} hitSlop={5} style={styles.action}>
+          <Text style={styles.withdrawText}>Withdraw</Text>
         </Pressable>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   shell: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    padding: 18,
-    gap: 8,
-    overflow: 'hidden',
-  },
-  top: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  label: {
-    color: dash.textMuted,
-    fontFamily: fonts.bodyBold,
-    fontSize: 11,
-    letterSpacing: 1.4,
-  },
-  pill: {
-    fontFamily: fonts.bodySemi,
-    fontSize: 11,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    overflow: 'hidden',
-  },
-  total: {
-    color: dash.text,
-    fontFamily: fonts.displayBold,
-    fontSize: 42,
-    letterSpacing: -1.2,
-    marginTop: 4,
-  },
-  caption: {
-    color: dash.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  metrics: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(8,4,18,0.45)',
+    gap: 10,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginTop: 4,
+    borderColor: dash.border,
+    backgroundColor: dash.surface,
+    padding: 12,
   },
-  metric: {
-    flex: 1,
-    gap: 2,
-  },
-  divider: {
-    width: 1,
-    height: 28,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    marginHorizontal: 12,
-  },
-  metricLabel: {
-    color: dash.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 11,
-  },
-  metricValue: {
-    color: dash.text,
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-  },
-  btn: {
-    flex: 1,
-    backgroundColor: dash.cta,
-    borderRadius: 16,
-    paddingVertical: 12,
+  iconWrap: {
+    width: 42,
+    height: 42,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 21,
+    backgroundColor: dash.opsDim,
+    borderWidth: 1,
+    borderColor: 'rgba(77,163,255,0.22)',
   },
-  btnText: {
-    color: dash.ctaText,
-    fontFamily: fonts.bodyBold,
-    fontSize: 13,
-  },
-  btnGhost: {
-    flex: 1,
-    borderRadius: 999,
-    paddingVertical: 12,
+  copy: { flex: 1, minWidth: 0, gap: 2 },
+  label: { color: dash.opsSoft, fontFamily: fonts.bodyBold, fontSize: 10, letterSpacing: 1.4 },
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' },
+  total: { color: dash.text, fontFamily: fonts.displayBold, fontSize: 24 },
+  today: { fontFamily: fonts.bodyBold, fontSize: 12 },
+  actions: { gap: 5 },
+  action: {
+    minWidth: 62,
     alignItems: 'center',
+    borderRadius: 7,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(15,24,36,0.75)',
   },
-  btnGhostText: {
-    color: dash.textSecondary,
-    fontFamily: fonts.bodySemi,
-    fontSize: 13,
-  },
-  pressed: {
-    opacity: 0.88,
-  },
+  depositText: { color: dash.opsSoft, fontFamily: fonts.bodyBold, fontSize: 10 },
+  withdrawText: { color: dash.textSecondary, fontFamily: fonts.bodyBold, fontSize: 10 },
 });

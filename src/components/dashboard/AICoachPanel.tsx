@@ -1,108 +1,74 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { dash } from '../../theme/dashboard';
 import { fonts } from '../../theme/typography';
 
+type CoachMode = 'plan' | 'live' | 'review';
+
+const COPY: Record<CoachMode, { title: string; body: string }> = {
+  plan: {
+    title: 'Ask Coach',
+    body: 'Review a spot before you play',
+  },
+  live: {
+    title: 'Ask Coach',
+    body: 'Get a quick second opinion on a live spot',
+  },
+  review: {
+    title: 'Ask Coach',
+    body: 'Turn a hand from your queue into a lesson',
+  },
+};
+
 type AICoachPanelProps = {
-  onVoiceLog?: () => void;
+  mode?: CoachMode;
   onOpenChat?: () => void;
 };
 
-export function AICoachPanel({ onVoiceLog, onOpenChat }: AICoachPanelProps) {
+export function AICoachPanel({ mode = 'plan', onOpenChat }: AICoachPanelProps) {
+  const copy = COPY[mode];
   return (
-    <Pressable onPress={onOpenChat} style={styles.shell}>
-      <LinearGradient
-        colors={['rgba(155,107,255,0.22)', 'rgba(26,34,56,0.95)', 'rgba(20,26,44,0.98)']}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={styles.grad}
-      >
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text style={styles.eyebrow}>AI COACH</Text>
-          <Text style={styles.title}>Ask the spot. Log by voice.</Text>
-          <Text style={styles.body}>“Why fold here?” · “Is 33% pot fine?”</Text>
-        </View>
-        <View style={styles.actions}>
-          <Pressable
-            onPress={onVoiceLog}
-            style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
-          >
-            <Text style={styles.primaryText}>Voice</Text>
-          </Pressable>
-          <Pressable
-            onPress={onOpenChat}
-            style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-          >
-            <Text style={styles.secondaryText}>Chat</Text>
-          </Pressable>
-        </View>
-      </LinearGradient>
+    <Pressable
+      onPress={onOpenChat}
+      style={({ pressed }) => [styles.shell, pressed && styles.pressed]}
+    >
+      <View style={styles.iconWrap}>
+        <Ionicons name="sparkles-outline" size={22} color={dash.brandSoft} />
+      </View>
+      <View style={styles.copy}>
+        <Text style={styles.eyebrow}>AI COACH</Text>
+        <Text style={styles.title}>{copy.title}</Text>
+        <Text style={styles.body}>{copy.body}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={dash.brandSoft} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   shell: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  grad: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 16,
-  },
-  eyebrow: {
-    color: dash.brandSoft,
-    fontFamily: fonts.bodyBold,
-    fontSize: 10,
-    letterSpacing: 1.4,
-  },
-  title: {
-    color: dash.text,
-    fontFamily: fonts.display,
-    fontSize: 18,
-    letterSpacing: -0.2,
-  },
-  body: {
-    color: dash.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 12,
-  },
-  actions: {
-    gap: 8,
-  },
-  primary: {
-    backgroundColor: dash.cta,
+    gap: 11,
     borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minWidth: 72,
-    alignItems: 'center',
-  },
-  primaryText: {
-    color: dash.ctaText,
-    fontFamily: fonts.bodyBold,
-    fontSize: 12,
-  },
-  secondary: {
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minWidth: 72,
-    alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(155,107,255,0.33)',
+    backgroundColor: 'rgba(49,31,100,0.82)',
+    padding: 12,
   },
-  secondaryText: {
-    color: dash.text,
-    fontFamily: fonts.bodyBold,
-    fontSize: 12,
+  iconWrap: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: 'rgba(196,164,255,0.11)',
+    borderWidth: 1,
+    borderColor: 'rgba(196,164,255,0.3)',
   },
-  pressed: {
-    opacity: 0.88,
-  },
+  copy: { flex: 1, gap: 1 },
+  eyebrow: { color: dash.brandSoft, fontFamily: fonts.bodyBold, fontSize: 10, letterSpacing: 1.3 },
+  title: { color: dash.text, fontFamily: fonts.bodyBold, fontSize: 15 },
+  body: { color: 'rgba(255,255,255,0.63)', fontFamily: fonts.body, fontSize: 12 },
+  pressed: { opacity: 0.86 },
 });

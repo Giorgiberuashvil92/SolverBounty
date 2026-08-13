@@ -7,7 +7,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import type { PlayerProfile } from '../auth/session';
@@ -130,10 +129,6 @@ export function OnboardingScreen({ onFinished }: OnboardingScreenProps) {
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={['#151A32', '#0B1020', '#080C18']}
-        style={StyleSheet.absoluteFill}
-      />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -212,7 +207,7 @@ export function OnboardingScreen({ onFinished }: OnboardingScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: dash.bg },
+  root: { flex: 1, backgroundColor: 'transparent' },
   content: { paddingHorizontal: 20, gap: 10 },
   kicker: {
     color: dash.textMuted,

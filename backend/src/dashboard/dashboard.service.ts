@@ -87,6 +87,14 @@ export class DashboardService {
     );
   }
 
+  recommendDrill(userId: string, sessionId: string) {
+    return this.wrap(() => this.store.recommendDrill(userId, sessionId), true);
+  }
+
+  generateDrill(userId: string, sessionId: string) {
+    return this.wrap(() => this.store.generateDrill(userId, sessionId), true);
+  }
+
   private async wrap<T>(fn: () => Promise<T>, notFound = false): Promise<T> {
     try {
       return await fn();

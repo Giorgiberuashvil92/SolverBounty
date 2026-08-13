@@ -106,7 +106,7 @@ function Chip({ text }: { text: string }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: dash.bg,
+    backgroundColor: 'transparent',
   },
   top: {
     paddingHorizontal: 16,

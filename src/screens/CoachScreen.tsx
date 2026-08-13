@@ -566,10 +566,6 @@ export function CoachScreen() {
   if (loading) {
     return (
       <View style={[styles.root, styles.center, { paddingTop: insets.top }]}>
-        <LinearGradient
-          colors={['#151A32', '#0B1020', '#080C18']}
-          style={StyleSheet.absoluteFill}
-        />
         <ActivityIndicator color={dash.ops} />
       </View>
     );
@@ -577,13 +573,6 @@ export function CoachScreen() {
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={['#171D36', '#0B1020', '#080C18']}
-        locations={[0, 0.45, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.orb} pointerEvents="none" />
-
       <KeyboardAvoidingView
         style={[styles.flex, { paddingTop: insets.top + 6 }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1153,19 +1142,9 @@ export function CoachScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: dash.bg },
+  root: { flex: 1, backgroundColor: 'transparent' },
   flex: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
-  orb: {
-    position: 'absolute',
-    top: -40,
-    right: -30,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(77,163,255,0.08)',
-  },
-
   header: {
     paddingHorizontal: 18,
     flexDirection: 'row',

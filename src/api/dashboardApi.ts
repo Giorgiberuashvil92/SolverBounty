@@ -5,6 +5,7 @@ import type {
   PokerSession,
   PreSessionChecklist,
 } from '../types/session';
+import type { Drill } from '../data/drills';
 
 export type ReviewsPayload = {
   sessions: Array<{
@@ -14,6 +15,7 @@ export type ReviewsPayload = {
     startedAt?: string;
     endedAt?: string;
     profitLossCents?: number;
+    buyInCents: number;
     durationSeconds: number;
     keyHandsCount: number;
     toReviewCount: number;
@@ -24,6 +26,21 @@ export type ReviewsPayload = {
   toReview: Array<
     KeyHand & { stakesLabel?: string; sessionStartedAt?: string }
   >;
+};
+
+export type DrillRecommendation = {
+  packId: 'open' | '3bet' | 'defend' | 'cbet';
+  title: string;
+  reason: string;
+  difficulty: 'foundation' | 'standard' | 'advanced';
+  source: 'ai' | 'rules';
+};
+
+export type GeneratedDrillPlan = {
+  title: string;
+  subtitle: string;
+  drills: Drill[];
+  source: 'ai';
 };
 
 export const dashboardApi = {
@@ -52,6 +69,8 @@ export const dashboardApi = {
   startSession: (input: {
     stakesLabel: string;
     buyInCents: number;
+    venue?: PokerSession['venue'];
+    gameType?: PokerSession['gameType'];
     preSession?: PreSessionChecklist;
   }) =>
     apiRequest<PokerSession>('/sessions/start', {
@@ -63,6 +82,16 @@ export const dashboardApi = {
     apiRequest<PokerSession>(`/sessions/${sessionId}/end`, {
       method: 'POST',
       body: JSON.stringify({ cashOutCents }),
+    }),
+
+  recommendDrill: (sessionId: string) =>
+    apiRequest<DrillRecommendation>(`/sessions/${sessionId}/drill-recommendation`, {
+      method: 'POST',
+    }),
+
+  generateDrill: (sessionId: string) =>
+    apiRequest<GeneratedDrillPlan>(`/sessions/${sessionId}/generated-drill`, {
+      method: 'POST',
     }),
 
   updateChecklist: (sessionId: string, checklist: PreSessionChecklist) =>
@@ -77,7 +106,7 @@ export const dashboardApi = {
 
   updateMental: (
     sessionId: string,
-    mental: { tiltScore: number; energyLevel: number; notes?: string },
+    mental: { tiltScore: number; energyLevel: number; gameQuality?: 'A' | 'B' | 'C'; notes?: string },
   ) =>
     apiRequest<PokerSession>(`/sessions/${sessionId}/mental`, {
       method: 'PATCH',

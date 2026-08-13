@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -161,10 +160,6 @@ export function AuthScreen() {
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={['#151A32', '#0B1020', '#080C18']}
-        style={StyleSheet.absoluteFill}
-      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -283,7 +278,7 @@ export function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: dash.bg },
+  root: { flex: 1, backgroundColor: 'transparent' },
   content: { paddingHorizontal: 20, gap: 12 },
   kicker: {
     color: dash.textMuted,

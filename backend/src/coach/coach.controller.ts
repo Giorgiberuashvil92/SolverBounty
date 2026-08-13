@@ -1,14 +1,18 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
   Param,
   Post,
   Res,
+  UploadedFile,
+  UseInterceptors,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { CoachService } from './coach.service';
@@ -80,5 +84,16 @@ export class CoachController {
   @Post('parse-hand')
   parseHand(@CurrentUser() user: AuthUser, @Body() body: ParseHandDto) {
     return this.coach.parseHand(user.userId, body);
+  }
+
+  @Post('transcribe-hand')
+  @UseInterceptors(FileInterceptor('audio', { limits: { fileSize: 12 * 1024 * 1024 } }))
+  transcribeHand(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() audio?: { buffer: Buffer; mimetype?: string; originalname?: string },
+    @Body('stakes') stakes?: string,
+  ) {
+    if (!audio?.buffer?.length) throw new BadRequestException('Attach a voice recording');
+    return this.coach.transcribeHand(user.userId, audio, stakes);
   }
 }

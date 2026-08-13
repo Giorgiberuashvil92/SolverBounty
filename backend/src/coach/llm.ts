@@ -26,6 +26,44 @@ Return STRICT JSON only (no markdown) with this schema:
 Do NOT restate hole cards, board, result, or tags — the UI already shows them.
 Be specific to THIS spot. Prefer sizing and range language.`;
 
+const DRILL_RECOMMENDATION_SYSTEM = `You select one poker training deck after a session.
+Return STRICT JSON only (no markdown):
+{
+  "packId": "open" | "3bet" | "defend" | "cbet",
+  "title": "short 3-6 word drill title",
+  "reason": "one concise sentence grounded only in the supplied session data",
+  "difficulty": "foundation" | "standard" | "advanced"
+}
+You do not solve poker hands, state GTO facts, or invent details. Select only one of these verified decks:
+- open: preflop opening ranges
+- 3bet: 3-bets and squeezes
+- defend: defending versus opens and 3-bets
+- cbet: flop continuation bets`;
+
+const GENERATED_DRILL_SYSTEM = `You create five focused poker practice spots from a player's session summary.
+Return STRICT JSON only (no markdown):
+{
+  "title": "short drill title",
+  "subtitle": "one concise coaching goal",
+  "drills": [{
+    "tag": "open" | "3bet" | "defend" | "cbet" | "squeeze",
+    "stakesLabel": "string",
+    "stackBb": 20-200,
+    "heroPosition": "UTG" | "HJ" | "CO" | "BTN" | "SB" | "BB",
+    "holeCards": ["As", "Kd"],
+    "board": ["2c", "7d", "Th"] | null,
+    "potBb": number | null,
+    "actors": [{"position":"UTG","state":"fold" | "wait" | "open" | "call" | "raise" | "3bet" | "complete" | "check" | "toAct","amountBb":number|null}],
+    "actionLine": "concise factual action history",
+    "prompt": "what do you do?",
+    "choices": [{"label":"short action", "quality":"best" | "ok" | "leak"}],
+    "explainBest": "concise educational explanation",
+    "explainOk": "optional concise explanation",
+    "explainLeak": "concise explanation"
+  }]
+}
+Rules: create exactly 5 spots, each with exactly 3 choices and exactly one best choice. Use only standard card codes (As, Kd, Th). Do not claim solver verification or exact GTO frequencies. Keep all explanations educational and probabilistic, not absolute. Build only from the provided session themes; do not invent a played hand history.`;
+
 export async function chatWithLlm(
   config: ConfigService,
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
@@ -148,6 +186,101 @@ export async function analyzeHandWithLlm(
   } catch {
     return null;
   }
+}
+
+export async function recommendDrillWithLlm(
+  config: ConfigService,
+  sessionPayload: string,
+): Promise<Record<string, unknown> | null> {
+  const key = config.get<string>('OPENAI_API_KEY');
+  if (!key) return null;
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
+      reasoning_effort: 'none',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: DRILL_RECOMMENDATION_SYSTEM },
+        { role: 'user', content: sessionPayload },
+      ],
+    }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const raw = data.choices?.[0]?.message?.content;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export async function generateDrillWithLlm(
+  config: ConfigService,
+  sessionPayload: string,
+): Promise<Record<string, unknown> | null> {
+  const key = config.get<string>('OPENAI_API_KEY');
+  if (!key) return null;
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
+      reasoning_effort: 'none',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: GENERATED_DRILL_SYSTEM },
+        { role: 'user', content: sessionPayload },
+      ],
+    }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const raw = data.choices?.[0]?.message?.content;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export async function transcribeAudioWithLlm(
+  config: ConfigService,
+  audio: { buffer: Buffer; mimetype?: string; filename?: string },
+): Promise<string | null> {
+  const key = config.get<string>('OPENAI_API_KEY');
+  if (!key || !audio.buffer.length) return null;
+
+  const form = new FormData();
+  form.append('model', config.get<string>('OPENAI_TRANSCRIBE_MODEL') || 'gpt-4o-mini-transcribe');
+  const bytes = new Uint8Array(audio.buffer.byteLength);
+  bytes.set(audio.buffer);
+  form.append('file', new Blob([bytes], { type: audio.mimetype || 'audio/m4a' }), audio.filename || 'hand.m4a');
+
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { text?: string };
+  return data.text?.trim() || null;
 }
 
 export async function parseHandWithLlm(

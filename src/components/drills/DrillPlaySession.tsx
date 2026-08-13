@@ -41,15 +41,13 @@ function choiceTone(q: DrillChoiceQuality) {
   return { bg: 'rgba(255,77,94,0.14)', border: 'rgba(255,77,94,0.4)', text: dash.loss };
 }
 
-function actionButtonStyle(label: string) {
-  const low = label.toLowerCase();
-  if (low.includes('fold')) {
-    return { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.12)', text: dash.textSecondary };
+function shuffledChoices(choices: DrillChoice[]): DrillChoice[] {
+  const result = [...choices];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(Math.random() * (index + 1));
+    [result[index], result[target]] = [result[target], result[index]];
   }
-  if (low.includes('check') || low.includes('call') || low.includes('limp')) {
-    return { bg: 'rgba(77,163,255,0.14)', border: 'rgba(77,163,255,0.35)', text: dash.opsSoft };
-  }
-  return { bg: 'rgba(46,230,106,0.16)', border: 'rgba(46,230,106,0.4)', text: dash.cta };
+  return result;
 }
 
 export function DrillPlaySession({
@@ -64,18 +62,23 @@ export function DrillPlaySession({
   const insets = useSafeAreaInsets();
   const [cursor, setCursor] = useState(0);
   const [picked, setPicked] = useState<DrillChoice | null>(null);
+  const [showExplanation, setShowExplanation] = useState(false);
   const [lastLpGain, setLastLpGain] = useState(0);
   const [stats, setStats] = useState({ answered: 0, best: 0, ok: 0, leak: 0, lpGained: 0 });
   const [snapshot, setSnapshot] = useState<SessionResult | null>(null);
+  const playDeck = useMemo(
+    () => deck.map((drill) => ({ ...drill, choices: shuffledChoices(drill.choices) })),
+    [deck],
+  );
 
-  const drill = deck[Math.min(cursor, Math.max(0, deck.length - 1))];
-  const done = cursor >= deck.length;
+  const drill = playDeck[Math.min(cursor, Math.max(0, playDeck.length - 1))];
+  const done = cursor >= playDeck.length;
   const countsLp = mode === 'ranked';
 
   const progressLabel = useMemo(() => {
-    if (done) return `${deck.length}/${deck.length}`;
-    return `${Math.min(cursor + (picked ? 1 : 0), deck.length)}/${deck.length}`;
-  }, [cursor, picked, deck.length, done]);
+    if (done) return `${playDeck.length}/${playDeck.length}`;
+    return `${Math.min(cursor + (picked ? 1 : 0), playDeck.length)}/${playDeck.length}`;
+  }, [cursor, picked, playDeck.length, done]);
 
   const onChoose = (choice: DrillChoice) => {
     if (picked || !drill) return;
@@ -89,6 +92,7 @@ export function DrillPlaySession({
     };
     setLastLpGain(gain);
     setPicked(choice);
+    setShowExplanation(false);
     setStats(next);
     setSnapshot(next);
   };
@@ -97,14 +101,15 @@ export function DrillPlaySession({
     if (!picked || !snapshot) return;
     const next = cursor + 1;
     setPicked(null);
+    setShowExplanation(false);
     setLastLpGain(0);
     setCursor(next);
-    if (next >= deck.length) {
+    if (next >= playDeck.length) {
       onFinished(snapshot);
     }
   };
 
-  if (!deck.length) {
+  if (!playDeck.length) {
     return (
       <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.empty}>No spots in this pack yet.</Text>
@@ -166,6 +171,17 @@ export function DrillPlaySession({
           <Text style={styles.lpLine}>
             Run +{stats.lpGained} LP · total {currentLp + stats.lpGained} LP
           </Text>
+        ) : !showExplanation ? (
+          <View style={styles.answerReveal}>
+            <Text style={styles.answerEyebrow}>BEST ACTION</Text>
+            <Text style={styles.answerTitle}>
+              {drill.choices.find((choice) => choice.quality === 'best')?.label ?? 'No best line found'}
+            </Text>
+            <Text style={styles.answerPicked}>You chose: {picked?.label ?? '—'}</Text>
+            <Pressable onPress={() => setShowExplanation(true)} style={styles.primaryBtn}>
+              <Text style={styles.primaryBtnText}>See explanation</Text>
+            </Pressable>
+          </View>
         ) : (
           <Text style={styles.lpLine}>Practice mode · scores don’t hit the board</Text>
         )}
@@ -189,18 +205,16 @@ export function DrillPlaySession({
         {!picked ? (
           <View style={styles.choices}>
             {drill.choices.map((c) => {
-              const style = actionButtonStyle(c.label);
               return (
                 <Pressable
                   key={c.id}
                   onPress={() => onChoose(c)}
                   style={({ pressed }) => [
                     styles.choiceBtn,
-                    { backgroundColor: style.bg, borderColor: style.border },
                     pressed && { opacity: 0.88 },
                   ]}
                 >
-                  <Text style={[styles.choiceText, { color: style.text }]}>{c.label}</Text>
+                  <Text style={styles.choiceText}>{c.label}</Text>
                 </Pressable>
               );
             })}
@@ -235,7 +249,7 @@ export function DrillPlaySession({
             ) : null}
             <Pressable onPress={onNext} style={styles.primaryBtn}>
               <Text style={styles.primaryBtnText}>
-                {cursor + 1 >= deck.length ? 'Finish' : 'Next spot'}
+                {cursor + 1 >= playDeck.length ? 'Finish' : 'Next spot'}
               </Text>
             </Pressable>
           </View>
@@ -338,11 +352,13 @@ const styles = StyleSheet.create({
   choiceBtn: {
     borderRadius: 16,
     borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderColor: 'rgba(255,255,255,0.14)',
     paddingVertical: 16,
     paddingHorizontal: 16,
     alignItems: 'center',
   },
-  choiceText: { fontFamily: fonts.bodyBold, fontSize: 16 },
+  choiceText: { color: dash.text, fontFamily: fonts.bodyBold, fontSize: 16 },
   reveal: {
     borderRadius: 20,
     padding: 16,
@@ -350,6 +366,31 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20,26,44,0.95)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  answerReveal: {
+    borderRadius: 20,
+    padding: 18,
+    gap: 10,
+    backgroundColor: 'rgba(20,26,44,0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,163,255,0.34)',
+  },
+  answerEyebrow: {
+    color: dash.opsSoft,
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    letterSpacing: 1.2,
+  },
+  answerTitle: {
+    color: dash.text,
+    fontFamily: fonts.displayBold,
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  answerPicked: {
+    color: dash.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
   },
   verdictPill: {
     alignSelf: 'flex-start',

@@ -17,10 +17,13 @@ import { CoachScreen } from './src/screens/CoachScreen';
 import { ReviewsScreen } from './src/screens/ReviewsScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
+import { AppBackground } from './src/components/AppBackground';
 import { NeonTabBar } from './src/components/NeonTabBar';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { dash } from './src/theme/dashboard';
 import type { AppTab } from './src/navigation/tabs';
+import type { DrillRecommendation } from './src/api/dashboardApi';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -28,60 +31,89 @@ function AppShell({ onLayout }: { onLayout?: () => void }) {
   const { user, loading } = useAuth();
   const [tab, setTab] = useState<AppTab>('daily');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [hideTabBar, setHideTabBar] = useState(false);
+  const [drillRecommendation, setDrillRecommendation] = useState<DrillRecommendation | null>(null);
+  const [drillRecommendationSessionId, setDrillRecommendationSessionId] = useState<string | null>(null);
 
   if (loading) {
     return (
-      <View style={[styles.shell, styles.bootCenter]} onLayout={onLayout}>
+      <AppBackground style={[styles.shell, styles.bootCenter]} onLayout={onLayout}>
         <ActivityIndicator color={dash.brand} />
-      </View>
+      </AppBackground>
     );
   }
 
   if (!user) {
     return (
-      <View style={styles.shell} onLayout={onLayout}>
+      <AppBackground style={styles.shell} onLayout={onLayout}>
         <StatusBar style="light" />
         <AuthScreen />
-      </View>
+      </AppBackground>
+    );
+  }
+
+  if (showProfile) {
+    return (
+      <AppBackground style={styles.shell} onLayout={onLayout}>
+        <StatusBar style="light" />
+        <ProfileScreen
+          onBack={() => setShowProfile(false)}
+          onEditSetup={() => {
+            setShowProfile(false);
+            setShowOnboarding(true);
+          }}
+        />
+      </AppBackground>
     );
   }
 
   if (!user.onboardingCompleted || showOnboarding) {
     return (
-      <View style={styles.shell} onLayout={onLayout}>
+      <AppBackground style={styles.shell} onLayout={onLayout}>
         <StatusBar style="light" />
         <OnboardingScreen onFinished={() => setShowOnboarding(false)} />
-      </View>
+      </AppBackground>
     );
   }
 
   return (
-    <View style={styles.shell} onLayout={onLayout}>
+    <AppBackground style={styles.shell} onLayout={onLayout}>
       <StatusBar style="light" />
       <View style={styles.body}>
         {tab === 'daily' ? (
           <DashboardScreen
             onOpenCoachTab={() => setTab('coach')}
             onOpenCoachChat={() => setTab('coach')}
-            onOpenOnboarding={() => setShowOnboarding(true)}
+            onOpenProfile={() => setShowProfile(true)}
             onOpenReviews={() => setTab('reviews')}
+            onOpenDrills={(context) => {
+              setDrillRecommendation(context?.recommendation ?? null);
+              setDrillRecommendationSessionId(context?.sessionId ?? null);
+              setTab('drills');
+            }}
+            onOpenCommunity={() => setTab('community')}
           />
         ) : null}
         {tab === 'community' ? <CommunityScreen /> : null}
         {tab === 'coach' ? <CoachScreen /> : null}
-        {tab === 'reviews' ? (
-          <ReviewsScreen
-            onOpenDaily={() => setTab('daily')}
-            onOpenCommunity={() => setTab('community')}
-          />
-        ) : null}
+  {tab === 'reviews' ? (
+    <ReviewsScreen
+      onOpenDaily={() => setTab('daily')}
+      onOpenCommunity={() => setTab('community')}
+      onOpenDrills={() => setTab('drills')}
+    />
+  ) : null}
         {tab === 'drills' ? (
-          <DrillsScreen onImmersiveChange={setHideTabBar} />
+          <DrillsScreen
+            recommendation={drillRecommendation}
+            recommendationSessionId={drillRecommendationSessionId}
+            onImmersiveChange={setHideTabBar}
+          />
         ) : null}
       </View>
       {!hideTabBar ? <NeonTabBar active={tab} onChange={setTab} /> : null}
-    </View>
+    </AppBackground>
   );
 }
 

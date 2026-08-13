@@ -108,4 +108,14 @@ export class DashboardController {
   ) {
     return this.dashboard.markHandReviewed(user.userId, sessionId, handId);
   }
+
+  @Post('sessions/:id/drill-recommendation')
+  recommendDrill(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.dashboard.recommendDrill(user.userId, id);
+  }
+
+  @Post('sessions/:id/generated-drill')
+  generateDrill(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.dashboard.generateDrill(user.userId, id);
+  }
 }

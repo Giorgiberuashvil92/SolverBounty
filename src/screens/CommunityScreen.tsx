@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Animated,
-  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -52,34 +50,12 @@ export function CommunityScreen() {
   const [filter, setFilter] = useState<FeedFilter>('all');
   const [destOpen, setDestOpen] = useState(false);
   const me = getUser(ME_ID)!;
-  const glow = useRef(new Animated.Value(0.28)).current;
 
   useEffect(() => {
     void loadUserCommunityPosts().then((mine) => {
       setPosts([...mine, ...COMMUNITY_POSTS]);
     });
   }, []);
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 0.55,
-          duration: 2400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glow, {
-          toValue: 0.25,
-          duration: 2400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [glow]);
 
   const activeUsers = useMemo(
     () => COMMUNITY_USERS.filter((u) => u.status !== 'offline'),
@@ -205,13 +181,6 @@ export function CommunityScreen() {
 
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={['#171D36', '#0B1020', '#080C18']}
-        locations={[0, 0.5, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-      <Animated.View style={[styles.orb, { opacity: glow }]} />
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 10 }]}
@@ -356,16 +325,7 @@ export function CommunityScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: dash.bg,
-  },
-  orb: {
-    position: 'absolute',
-    top: -40,
-    right: -30,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(77,163,255,0.1)',
+    backgroundColor: 'transparent',
   },
   scroll: {
     paddingBottom: 36,

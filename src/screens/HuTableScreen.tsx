@@ -82,6 +82,7 @@ export function HuTableScreen({ onClose, onPlayAgain }: Props) {
             setOpponent(info.opponent);
             setPhase('matched');
             setShowQueue(true);
+            sock.sync();
             setTimeout(() => setShowQueue(false), 1600);
           },
           onTableState: (v) => {
@@ -108,6 +109,7 @@ export function HuTableScreen({ onClose, onPlayAgain }: Props) {
         } else if (res.status === 'matched' || res.status === 'rejoined') {
           setPhase('matched');
           setShowQueue(false);
+          sock.sync();
         }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
