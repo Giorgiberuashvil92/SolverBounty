@@ -35,6 +35,8 @@ type HandDetailModalProps = {
   onClose: () => void;
   onAnalyze?: () => void;
   onMarkReviewed?: () => void;
+  onCreateDrill?: () => void;
+  onDelete?: () => void;
   /** After posting to the in-app Community feed */
   onSharedToCommunity?: () => void;
 };
@@ -206,6 +208,8 @@ export function HandDetailModal({
   onClose,
   onAnalyze,
   onMarkReviewed,
+  onCreateDrill,
+  onDelete,
   onSharedToCommunity,
 }: HandDetailModalProps) {
   const [feltId, setFeltId] = useState<FeltThemeId>('green');
@@ -252,6 +256,20 @@ export function HandDetailModal({
     (hand.tags ?? []).find((t) =>
       ['missed_value', 'bad_fold', 'bluff', 'value', 'cooler', 'tilt', 'study'].includes(t),
     ) ?? null;
+
+  const boardLine = hand.board?.length ? hand.board.join(' ') : 'Not logged';
+  const actionLine = hand.actions?.length
+    ? hand.actions
+        .map(
+          (action) =>
+            `${action.actor} ${action.action}${action.sizeBb != null ? ` ${action.sizeBb}bb` : ''}`,
+        )
+        .join('  ->  ')
+    : 'Not logged';
+  const missingDetails = [
+    !hand.board?.length ? 'board' : null,
+    !hand.actions?.length ? 'action line' : null,
+  ].filter(Boolean) as string[];
 
   const pickFelt = (id: FeltThemeId) => {
     setFeltId(id);
@@ -311,6 +329,9 @@ export function HandDetailModal({
               {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
             </View>
             <View style={styles.headRight}>
+              <Pressable onPress={onDelete} hitSlop={10} style={styles.deleteBtn}>
+                <Text style={styles.deleteText}>Delete</Text>
+              </Pressable>
               <Pressable onPress={onClose} hitSlop={10}>
                 <Text style={styles.close}>Close</Text>
               </Pressable>
@@ -493,6 +514,55 @@ export function HandDetailModal({
               </LinearGradient>
             </View>
 
+            <View style={styles.handFacts}>
+              <Text style={styles.factsLabel}>Hand facts</Text>
+              <View style={styles.factGrid}>
+                <View style={styles.factCell}>
+                  <Text style={styles.factKey}>Hero</Text>
+                  <Text style={styles.factValue}>{hand.heroPosition ?? 'Not logged'}</Text>
+                </View>
+                <View style={styles.factCell}>
+                  <Text style={styles.factKey}>Spot</Text>
+                  <Text style={styles.factValue}>
+                    {hand.potType ? hand.potType.toUpperCase() : 'Not logged'}
+                  </Text>
+                </View>
+                <View style={styles.factCell}>
+                  <Text style={styles.factKey}>Opponents</Text>
+                  <Text style={styles.factValue} numberOfLines={1}>
+                    {hand.villainPositions?.length ? hand.villainPositions.join(', ') : 'Not logged'}
+                  </Text>
+                </View>
+                <View style={styles.factCell}>
+                  <Text style={styles.factKey}>Result</Text>
+                  <Text
+                    style={[
+                      styles.factValue,
+                      hand.resultBb != null && hand.resultBb > 0 && styles.plUp,
+                      hand.resultBb != null && hand.resultBb < 0 && styles.plDown,
+                    ]}
+                  >
+                    {hand.resultBb == null
+                      ? 'Not logged'
+                      : `${hand.resultBb > 0 ? '+' : ''}${hand.resultBb}bb`}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.factLine}>
+                <Text style={styles.factKey}>Board</Text>
+                <Text style={styles.factLineValue}>{boardLine}</Text>
+              </View>
+              <View style={styles.factLine}>
+                <Text style={styles.factKey}>Action line</Text>
+                <Text style={styles.factLineValue}>{actionLine}</Text>
+              </View>
+              {missingDetails.length ? (
+                <Text style={styles.missingDetails}>
+                  Needs {missingDetails.join(' and ')} for a reliable review.
+                </Text>
+              ) : null}
+            </View>
+
             {hand.actions?.length ? (
               <View style={styles.actionRow}>
                 {hand.actions.map((a, i) => {
@@ -597,9 +667,23 @@ export function HandDetailModal({
             </View>
           </ScrollView>
 
-          {!reviewed ? (
-            <View style={styles.actions}>
-              {brief || legacyLine ? (
+          <View style={styles.actions}>
+            {brief || legacyLine ? (
+              <Pressable
+                disabled={busy}
+                onPress={onCreateDrill}
+                style={[styles.primary, busy && styles.disabled]}
+              >
+                {busy ? (
+                  <ActivityIndicator color={dash.ctaText} />
+                ) : (
+                  <Text style={styles.primaryText}>Practice this spot</Text>
+                )}
+              </Pressable>
+            ) : null}
+            {!reviewed ? (
+              <>
+                {brief || legacyLine ? (
                 <Pressable
                   disabled={busy}
                   onPress={onAnalyze}
@@ -611,22 +695,21 @@ export function HandDetailModal({
                     <Text style={styles.ghostText}>Refresh</Text>
                   )}
                 </Pressable>
-              ) : null}
-              <Pressable
-                disabled={busy}
-                onPress={onMarkReviewed}
-                style={[styles.primary, busy && styles.disabled]}
-              >
-                <Text style={styles.primaryText}>Done</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.actions}>
+                ) : null}
+                <Pressable
+                  disabled={busy}
+                  onPress={onMarkReviewed}
+                  style={[brief || legacyLine ? styles.ghost : styles.primary, busy && styles.disabled]}
+                >
+                  <Text style={brief || legacyLine ? styles.ghostText : styles.primaryText}>Done</Text>
+                </Pressable>
+              </>
+            ) : (
               <View style={styles.doneBanner}>
                 <Text style={styles.doneText}>Saved to reviewed</Text>
               </View>
-            </View>
-          )}
+            )}
+          </View>
         </View>
       </View>
     </Modal>
@@ -994,6 +1077,56 @@ const styles = StyleSheet.create({
   },
   cardSuitSm: { fontSize: 14 },
 
+  handFacts: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(143,196,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    padding: 12,
+    gap: 10,
+  },
+  factsLabel: {
+    color: dash.opsSoft,
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  factGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  factCell: {
+    width: '50%',
+    gap: 3,
+    paddingBottom: 9,
+  },
+  factKey: {
+    color: dash.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+  },
+  factValue: {
+    color: dash.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+  },
+  factLine: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    gap: 3,
+    paddingTop: 9,
+  },
+  factLineValue: {
+    color: dash.textSecondary,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  missingDetails: {
+    color: '#FBBF24',
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
   actionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1168,4 +1301,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
   doneText: { color: dash.textSecondary, fontFamily: fonts.bodySemi },
+  deleteBtn: { paddingHorizontal: 5, paddingVertical: 4 },
+  deleteText: { color: dash.loss, fontFamily: fonts.bodyBold, fontSize: 12 },
 });

@@ -19,13 +19,16 @@ import { KeyHandsList } from '../components/dashboard/KeyHandsList';
 import { AICoachPanel } from '../components/dashboard/AICoachPanel';
 import { DailyFocusCard } from '../components/dashboard/DailyFocusCard';
 import { TodaySnapshotCard } from '../components/dashboard/TodaySnapshotCard';
+import { WeeklyProgressCard } from '../components/dashboard/WeeklyProgressCard';
 import { MoneyFormModal } from '../components/dashboard/MoneyFormModal';
 import { StartSessionModal } from '../components/dashboard/StartSessionModal';
 import { EndSessionModal } from '../components/dashboard/EndSessionModal';
 import { HandLoggerModal } from '../components/dashboard/HandLoggerModal';
 import { QuickHandLogModal } from '../components/dashboard/QuickHandLogModal';
+import { MarkHandModal } from '../components/dashboard/MarkHandModal';
+import { NeedsDetailsModal } from '../components/dashboard/NeedsDetailsModal';
 import { SessionCompleteModal } from '../components/dashboard/SessionCompleteModal';
-import { dashboardApi, type DrillRecommendation } from '../api/dashboardApi';
+import { dashboardApi, type DrillRecommendation, type WeeklyInsights } from '../api/dashboardApi';
 import { prependUserCommunityPost, sessionToCommunityPost } from '../data/communityFeedStore';
 import { API_BASE } from '../api/config';
 import { useAuth } from '../auth/AuthContext';
@@ -34,6 +37,7 @@ import { fonts } from '../theme/typography';
 import type {
   DashboardSnapshot,
   PokerSession,
+  KeyHand,
   PreSessionChecklist as Checklist,
 } from '../types/session';
 
@@ -70,6 +74,7 @@ export function DashboardScreen({
     focusLevel: 5,
   });
   const [toReviewCount, setToReviewCount] = useState(0);
+  const [weeklyInsights, setWeeklyInsights] = useState<WeeklyInsights | null>(null);
   const [lastSessionPreset, setLastSessionPreset] = useState<{
     stakes: string;
     buyInCents: number;
@@ -85,6 +90,10 @@ export function DashboardScreen({
   const [handOpen, setHandOpen] = useState(false);
   const [quickHandOpen, setQuickHandOpen] = useState(false);
   const [quickHandSaving, setQuickHandSaving] = useState(false);
+  const [markHandOpen, setMarkHandOpen] = useState(false);
+  const [markHandSaving, setMarkHandSaving] = useState(false);
+  const [needsDetailsHand, setNeedsDetailsHand] = useState<KeyHand | null>(null);
+  const [editingHand, setEditingHand] = useState<KeyHand | null>(null);
   const [completed, setCompleted] = useState<{
     session: PokerSession;
     gameQuality: 'A' | 'B' | 'C';
@@ -104,12 +113,14 @@ export function DashboardScreen({
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [data, reviews] = await Promise.all([
+      const [data, reviews, insights] = await Promise.all([
         dashboardApi.getSnapshot(),
         dashboardApi.getReviews().catch(() => null),
+        dashboardApi.getWeeklyInsights().catch(() => null),
       ]);
       applySnapshot(data);
       setToReviewCount(reviews?.toReview?.length ?? 0);
+      setWeeklyInsights(insights);
       const mostRecent = reviews?.sessions.find((current) => current.status === 'ended');
       setLastSessionPreset(
         mostRecent
@@ -313,6 +324,10 @@ export function DashboardScreen({
                 if (!session) return;
                 setEndOpen(true);
               }}
+              onMarkHand={() => {
+                if (!session || session.status !== 'live') return;
+                setMarkHandOpen(true);
+              }}
               onLogHand={() => {
                 if (!session || session.status !== 'live') return;
                 setQuickHandOpen(true);
@@ -321,11 +336,47 @@ export function DashboardScreen({
               suggestedBuyInCents={sessionPreset.buyInCents}
             />
 
+            <MarkHandModal
+              visible={markHandOpen}
+              stakesLabel={session?.stakesLabel}
+              saving={markHandSaving}
+              onCancel={() => setMarkHandOpen(false)}
+              onSave={({ note, street }) => {
+                if (!session || markHandSaving) return;
+                setMarkHandSaving(true);
+                void dashboardApi.addKeyHand(session.id, {
+                  source: 'manual',
+                  tags: ['needs_details', street],
+                  stakes: session.stakesLabel,
+                  aiSummary: note,
+                  rawInput: note,
+                }).then((hand) => {
+                  setSession((current) => current?.id === session.id
+                    ? { ...current, keyHands: [hand, ...current.keyHands] }
+                    : current);
+                  setToReviewCount((count) => count + 1);
+                  setMarkHandOpen(false);
+                }).catch((error) => {
+                  Alert.alert('Mark hand', (error as Error).message || 'Could not mark this hand.');
+                }).finally(() => {
+                  setMarkHandSaving(false);
+                });
+              }}
+            />
+
             <TodaySnapshotCard
               toReviewCount={toReviewCount}
               lastSession={lastSession}
               onOpenReviews={onOpenReviews}
             />
+
+            {weeklyInsights ? (
+              <WeeklyProgressCard
+                insights={weeklyInsights}
+                onOpenReviews={onOpenReviews}
+                onOpenDrills={() => onOpenDrills?.()}
+              />
+            ) : null}
 
             {live ? (
               <KeyHandsList
@@ -333,6 +384,16 @@ export function DashboardScreen({
                 onAdd={() => setQuickHandOpen(true)}
                 onOpen={(hand) => {
                   if (!session) return;
+                  const readyForAnalysis = Boolean(
+                    !hand.tags.includes('needs_details') &&
+                    hand.heroPosition &&
+                    hand.holeCards?.length === 2 &&
+                    hand.actions?.length,
+                  );
+                  if (!readyForAnalysis) {
+                    setNeedsDetailsHand(hand);
+                    return;
+                  }
                   void withBusy(async () => {
                     const analyzed = await dashboardApi.analyzeKeyHand(session.id, hand.id);
                     setSession({
@@ -459,25 +520,42 @@ export function DashboardScreen({
       <HandLoggerModal
         visible={handOpen}
         stakesLabel={session?.stakesLabel}
+        initialNote={editingHand?.rawInput ?? editingHand?.aiSummary}
         onCancel={() => setHandOpen(false)}
         onConfirm={(input) => {
           if (!session) return;
           setHandOpen(false);
           void withBusy(async () => {
-            const hand = await dashboardApi.addKeyHand(session.id, {
+            const handInput = {
               ...input,
-              source: input.source === 'voice' ? 'voice' : 'manual',
+              source: input.source === 'voice' ? ('voice' as const) : ('manual' as const),
               stakes: input.stakes ?? session.stakesLabel,
-            });
+            };
+            const hand = editingHand
+              ? await dashboardApi.updateKeyHand(session.id, editingHand.id, handInput)
+              : await dashboardApi.addKeyHand(session.id, handInput);
             setSession({
               ...session,
-              keyHands: [hand, ...session.keyHands],
+              keyHands: editingHand
+                ? session.keyHands.map((item) => item.id === hand.id ? hand : item)
+                : [hand, ...session.keyHands],
             });
+            setEditingHand(null);
             Alert.alert('Hand logged', 'Open Reviews to study this spot.', [
               { text: 'Stay', style: 'cancel' },
               { text: 'Open Reviews', onPress: () => onOpenReviews?.() },
             ]);
           });
+        }}
+      />
+
+      <NeedsDetailsModal
+        visible={needsDetailsHand != null}
+        onClose={() => setNeedsDetailsHand(null)}
+        onFill={() => {
+          setEditingHand(needsDetailsHand);
+          setNeedsDetailsHand(null);
+          setHandOpen(true);
         }}
       />
 
@@ -499,7 +577,7 @@ export function DashboardScreen({
             : undefined;
           void dashboardApi.addKeyHand(session.id, {
             source: parsed ? 'voice' : 'manual',
-            tags,
+            tags: [...new Set(['needs_details', ...tags])],
             rawInput,
             aiSummary: parsed?.hand.summary ?? rawInput,
             stakes: session.stakesLabel,

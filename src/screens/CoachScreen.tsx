@@ -28,6 +28,7 @@ import {
 import { dashboardApi, type ReviewsPayload } from '../api/dashboardApi';
 import { MiniCards } from '../components/community/MiniCards';
 import { TabIcon } from '../components/TabIcon';
+import { VoiceCaptureButton } from '../components/VoiceCaptureButton';
 import { dash } from '../theme/dashboard';
 import { fonts } from '../theme/typography';
 import { formatDuration, formatSignedMoney } from '../utils/money';
@@ -467,11 +468,11 @@ export function CoachScreen() {
           }
         : null;
 
-  const sendChat = async () => {
-    const outbound = buildOutboundMessage(input, attachments);
+  const sendChat = async (spokenText?: string) => {
+    const outbound = buildOutboundMessage(spokenText ?? input, attachments);
     if (!outbound || busy) return;
     setBusy(true);
-    const keptInput = input;
+    const keptInput = spokenText ?? input;
     const keptAttach = attachments;
     const optimisticMessage: CoachMessage = {
       id: `pending-${Date.now()}`,
@@ -754,6 +755,11 @@ export function CoachScreen() {
                   multiline
                   editable={!busy}
                 />
+                <VoiceCaptureButton
+                  compact
+                  disabled={busy}
+                  onResult={({ transcript }) => void sendChat(transcript)}
+                />
                 <Pressable
                   onPress={() => void sendChat()}
                   disabled={!canSend}
@@ -772,10 +778,10 @@ export function CoachScreen() {
           <View style={styles.handPane}>
             <View style={styles.handCard}>
               <Text style={styles.handCardKicker}>VOICE → STRUCTURE</Text>
-              <Text style={styles.handCardTitle}>Paste the hand</Text>
+              <Text style={styles.handCardTitle}>Speak or paste the hand</Text>
               <Text style={styles.handHint}>
-                We’ll parse cards and position, then save to your live Daily session if one is
-                running.
+                Speak naturally or paste text. We’ll extract cards, position, and action before
+                saving it to your live Daily session.
               </Text>
               <TextInput
                 style={[styles.input, styles.handInput]}
@@ -786,6 +792,10 @@ export function CoachScreen() {
                 multiline
                 textAlignVertical="top"
                 editable={!busy}
+              />
+              <VoiceCaptureButton
+                disabled={busy}
+                onResult={({ transcript }) => setHandDraft(transcript)}
               />
               {lastParse ? (
                 <Text style={styles.parseMeta}>

@@ -9,7 +9,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { dashboardApi, type ReviewsPayload } from '../api/dashboardApi';
+import {
+  dashboardApi,
+  type GeneratedDrillPlan,
+  type ReviewsPayload,
+} from '../api/dashboardApi';
 import { MiniCards } from '../components/community/MiniCards';
 import { HandDetailModal } from '../components/dashboard/HandDetailModal';
 import { HandLoggerModal } from '../components/dashboard/HandLoggerModal';
@@ -21,7 +25,7 @@ import type { KeyHand, Street } from '../types/session';
 type ReviewsScreenProps = {
   onOpenDaily?: () => void;
   onOpenCommunity?: () => void;
-  onOpenDrills?: () => void;
+  onOpenDrills?: (context?: { plan?: GeneratedDrillPlan }) => void;
 };
 
 type ReviewTab = 'queue' | 'calendar';
@@ -242,6 +246,45 @@ export function ReviewsScreen({
     }
   };
 
+  const createPersonalizedDrill = async (sessionId: string, handId: string) => {
+    setBusyId(handId);
+    try {
+      const [plan] = await Promise.all([
+        dashboardApi.generateDrill(sessionId),
+        dashboardApi.markHandReviewed(sessionId, handId),
+      ]);
+      setSelected(null);
+      void load();
+      onOpenDrills?.({ plan });
+    } catch (requestError) {
+      Alert.alert('Personalized drill', (requestError as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteHand = (sessionId: string, handId: string) => {
+    Alert.alert('Delete hand?', 'This removes the hand from your review history and weekly insights.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => void (async () => {
+          setBusyId(handId);
+          try {
+            await dashboardApi.deleteKeyHand(sessionId, handId);
+            setSelected(null);
+            await load();
+          } catch (error) {
+            Alert.alert('Delete hand', (error as Error).message);
+          } finally {
+            setBusyId(null);
+          }
+        })(),
+      },
+    ]);
+  };
+
   if (loading && !data) {
     return <LoadingState top={insets.top} />;
   }
@@ -312,6 +355,8 @@ export function ReviewsScreen({
         onClose={() => setSelected(null)}
         onAnalyze={() => selected && void analyze(selected.sessionId, selected.id)}
         onMarkReviewed={() => selected && void markDone(selected.sessionId, selected.id)}
+        onCreateDrill={() => selected && void createPersonalizedDrill(selected.sessionId, selected.id)}
+        onDelete={() => selected && deleteHand(selected.sessionId, selected.id)}
         onSharedToCommunity={onOpenCommunity}
       />
 
@@ -395,7 +440,7 @@ function QueueView({
       )}
 
       {hands.length >= 2 ? (
-        <Pressable onPress={onOpenDrills} style={({ pressed }) => [styles.patternCard, pressed && styles.pressed]}>
+        <Pressable onPress={() => onOpenDrills?.()} style={({ pressed }) => [styles.patternCard, pressed && styles.pressed]}>
           <View style={styles.patternIcon}>
             <Ionicons name="sparkles" size={18} color={dash.brandSoft} />
           </View>

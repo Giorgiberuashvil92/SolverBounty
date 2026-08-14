@@ -63,8 +63,8 @@ export function KeyHandsList({ hands, onAdd, onOpen, onShare }: KeyHandsListProp
               <View style={styles.footer}>
                 <View style={styles.tags}>
                   {hand.tags.slice(0, 3).map((tag) => (
-                    <Text key={tag} style={styles.tag}>
-                      #{tag}
+                    <Text key={tag} style={[styles.tag, tag === 'needs_details' && styles.tagPending]}>
+                      {tag === 'needs_details' ? 'Needs details' : `#${tag}`}
                     </Text>
                   ))}
                 </View>
@@ -200,6 +200,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 11,
   },
+  tagPending: { color: dash.warning },
   share: {
     color: dash.brandSoft,
     fontFamily: fonts.bodyBold,

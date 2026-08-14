@@ -260,7 +260,7 @@ export class HuService {
     if (!actorId || actorId !== room.botUserId) return;
 
     this.clearBotTimer(room);
-    const think = 700 + Math.floor(Math.random() * 900);
+    const think = 1600 + Math.floor(Math.random() * 900);
     room.botTimer = setTimeout(() => {
       const r = this.tables.get(tableId);
       if (!r?.botUserId || r.engine.status !== 'active') return;

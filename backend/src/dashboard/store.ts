@@ -690,6 +690,44 @@ export class DashboardStore {
     return hand;
   }
 
+  async updateKeyHand(userId: string, sessionId: string, handId: string, input: Omit<KeyHand, 'id' | 'sessionId' | 'createdAt' | 'reviewStatus' | 'aiAnalyzedAt'>) {
+    const session = await this.requireOwnedSession(userId, sessionId);
+    const hand = session.keyHands.find((item) => item.id === handId);
+    if (!hand) throw new Error('Hand not found');
+    hand.source = input.source;
+    hand.tags = (input.tags ?? []).filter((tag) => tag !== 'needs_details');
+    hand.heroPosition = input.heroPosition;
+    hand.villainPositions = input.villainPositions;
+    hand.stakes = input.stakes;
+    hand.board = input.board;
+    hand.holeCards = input.holeCards;
+    hand.potType = input.potType;
+    hand.tableSize = input.tableSize;
+    hand.actions = input.actions;
+    hand.resultBb = input.resultBb;
+    hand.aiSummary = input.aiSummary;
+    hand.rawInput = input.rawInput;
+    hand.aiAnalysis = undefined;
+    hand.aiAnalyzedAt = undefined;
+    hand.reviewStatus = 'to_review';
+    session.markModified('keyHands');
+    session.updatedAt = new Date().toISOString();
+    await session.save();
+    return toKeyHandDto(hand);
+  }
+
+  async deleteKeyHand(userId: string, sessionId: string, handId: string) {
+    const session = await this.requireOwnedSession(userId, sessionId);
+    const initialLength = session.keyHands.length;
+    session.keyHands = session.keyHands.filter((hand) => hand.id !== handId);
+    if (session.keyHands.length === initialLength) throw new Error('Hand not found');
+    session.markModified('keyHands');
+    session.updatedAt = new Date().toISOString();
+    await session.save();
+    await this.analytics.track(userId, 'key_hand_deleted', { sessionId });
+    return { deleted: true };
+  }
+
   async listReviews(userId: string) {
     const sessions = await this.sessions
       .find({ userId })
@@ -728,6 +766,68 @@ export class DashboardStore {
       sessions: sessionRows,
       keyHands,
       toReview: keyHands.filter((h) => h.reviewStatus !== 'reviewed'),
+    };
+  }
+
+  async weeklyInsights(userId: string) {
+    const since = new Date();
+    since.setDate(since.getDate() - 6);
+    since.setHours(0, 0, 0, 0);
+    const sessions = await this.sessions
+      .find({ userId, createdAt: { $gte: since.toISOString() } })
+      .sort({ createdAt: -1 })
+      .lean();
+    const hands = sessions.flatMap((session) => session.keyHands ?? []);
+    const reviewed = hands.filter((hand) => hand.reviewStatus === 'reviewed').length;
+    const issueCounts = new Map<string, number>();
+
+    hands.forEach((hand) => {
+      let issue: string | null = null;
+      try {
+        const brief = JSON.parse(hand.aiAnalysis ?? '{}') as {
+          severity?: string;
+          focusStreet?: string | null;
+        };
+        if (brief.severity === 'leak' || brief.severity === 'study') {
+          issue = brief.focusStreet ? `${brief.focusStreet} decisions` : null;
+        }
+      } catch {
+        // A hand can be logged before the background AI analysis completes.
+      }
+      if (!issue) {
+        const tag = hand.tags?.[0];
+        issue = tag ? tag.replace(/_/g, ' ') : null;
+      }
+      if (issue) issueCounts.set(issue, (issueCounts.get(issue) ?? 0) + 1);
+    });
+
+    const topLeak = [...issueCounts.entries()]
+      .sort((a, b) => b[1] - a[1])[0] ?? null;
+    const profitCents = sessions.reduce((sum, session) => sum + (session.profitLossCents ?? 0), 0);
+    const durationSeconds = sessions.reduce((sum, session) => sum + (session.durationSeconds ?? 0), 0);
+    const pendingReviews = hands.length - reviewed;
+    const focus = topLeak?.[0] ?? 'Review habits';
+
+    return {
+      periodDays: 7,
+      sessionCount: sessions.length,
+      durationSeconds,
+      profitCents,
+      loggedHands: hands.length,
+      reviewedHands: reviewed,
+      pendingReviews,
+      topLeak: topLeak ? { label: topLeak[0], count: topLeak[1] } : null,
+      coachPlan: hands.length
+        ? {
+            title: `Sharpen ${focus}`,
+            body: pendingReviews
+              ? `Review ${pendingReviews} hand${pendingReviews === 1 ? '' : 's'}, then run a focused drill.`
+              : `Your review queue is clear. Run a short drill before your next session.`,
+          }
+        : {
+            title: 'Start your first trend',
+            body: 'Log a key hand this week and Coach will turn it into a practice plan.',
+          },
     };
   }
 

@@ -43,10 +43,24 @@ export type GeneratedDrillPlan = {
   source: 'ai';
 };
 
+export type WeeklyInsights = {
+  periodDays: number;
+  sessionCount: number;
+  durationSeconds: number;
+  profitCents: number;
+  loggedHands: number;
+  reviewedHands: number;
+  pendingReviews: number;
+  topLeak: { label: string; count: number } | null;
+  coachPlan: { title: string; body: string };
+};
+
 export const dashboardApi = {
   getSnapshot: () => apiRequest<DashboardSnapshot>('/dashboard'),
 
   getReviews: () => apiRequest<ReviewsPayload>('/reviews'),
+
+  getWeeklyInsights: () => apiRequest<WeeklyInsights>('/insights/weekly'),
 
   setupBankroll: (amountCents: number, currency = 'USD') =>
     apiRequest<DashboardSnapshot>('/bankroll/setup', {
@@ -135,6 +149,17 @@ export const dashboardApi = {
       method: 'POST',
       body: JSON.stringify(hand),
     }),
+
+  updateKeyHand: (
+    sessionId: string,
+    handId: string,
+    hand: {
+      source: KeyHand['source']; tags: string[]; heroPosition?: string; villainPositions?: string[]; holeCards?: string[]; board?: string[]; resultBb?: number; aiSummary?: string; rawInput?: string; stakes?: string; potType?: KeyHand['potType']; tableSize?: number; actions?: KeyHand['actions'];
+    },
+  ) => apiRequest<KeyHand>(`/sessions/${sessionId}/key-hands/${handId}`, { method: 'PATCH', body: JSON.stringify(hand) }),
+
+  deleteKeyHand: (sessionId: string, handId: string) =>
+    apiRequest<{ deleted: true }>(`/sessions/${sessionId}/key-hands/${handId}`, { method: 'DELETE' }),
 
   analyzeKeyHand: (sessionId: string, handId: string) =>
     apiRequest<KeyHand>(

@@ -18,6 +18,7 @@ type SessionTrackerProps = {
   session: PokerSession | null;
   onStart: () => void;
   onEnd: () => void;
+  onMarkHand?: () => void;
   onLogHand?: () => void;
   suggestedFormatLabel: string;
   suggestedBuyInCents: number;
@@ -27,6 +28,7 @@ export function SessionTracker({
   session,
   onStart,
   onEnd,
+  onMarkHand,
   onLogHand,
   suggestedFormatLabel,
   suggestedBuyInCents,
@@ -144,11 +146,18 @@ export function SessionTracker({
       {live ? (
         <View style={styles.liveActions}>
           <Pressable
-            onPress={onLogHand}
-            style={({ pressed }) => [styles.ctaLog, pressed && styles.pressed]}
+            onPress={onMarkHand}
+            style={({ pressed }) => [styles.ctaMark, pressed && styles.pressed]}
           >
-            <Ionicons name="flash-outline" size={17} color={dash.ctaText} />
-            <Text style={styles.ctaLogText}>Quick log</Text>
+            <Ionicons name="bookmark-outline" size={17} color={dash.ctaText} />
+            <Text style={styles.ctaMarkText}>Mark hand</Text>
+          </Pressable>
+          <Pressable
+            onPress={onLogHand}
+            accessibilityLabel="Add hand details"
+            style={({ pressed }) => [styles.ctaDetails, pressed && styles.pressed]}
+          >
+            <Ionicons name="mic-outline" size={18} color={dash.opsSoft} />
           </Pressable>
           <Pressable
             onPress={onEnd}
@@ -314,7 +323,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   liveActions: { flexDirection: 'row', gap: 8 },
-  ctaLog: {
+  ctaMark: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -324,10 +333,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
   },
-  ctaLogText: {
+  ctaMarkText: {
     color: dash.ctaText,
     fontFamily: fonts.bodyBold,
     fontSize: 14,
+  },
+  ctaDetails: {
+    width: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(77,163,255,0.11)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,163,255,0.28)',
   },
   ctaEnd: {
     minWidth: 84,

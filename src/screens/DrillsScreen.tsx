@@ -108,9 +108,17 @@ type DrillsProps = {
   onImmersiveChange?: (immersive: boolean) => void;
   recommendation?: DrillRecommendation | null;
   recommendationSessionId?: string | null;
+  generatedPlan?: GeneratedDrillPlan | null;
+  onGeneratedPlanConsumed?: () => void;
 };
 
-export function DrillsScreen({ onImmersiveChange, recommendation, recommendationSessionId }: DrillsProps = {}) {
+export function DrillsScreen({
+  onImmersiveChange,
+  recommendation,
+  recommendationSessionId,
+  generatedPlan,
+  onGeneratedPlanConsumed,
+}: DrillsProps = {}) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const day = todayKey();
@@ -129,6 +137,12 @@ export function DrillsScreen({ onImmersiveChange, recommendation, recommendation
     onImmersiveChange?.(session != null);
     return () => onImmersiveChange?.(false);
   }, [session, onImmersiveChange]);
+
+  useEffect(() => {
+    if (!generatedPlan) return;
+    setSession({ kind: 'ai', plan: generatedPlan });
+    onGeneratedPlanConsumed?.();
+  }, [generatedPlan, onGeneratedPlanConsumed]);
 
   useEffect(() => {
     if (session != null) return;

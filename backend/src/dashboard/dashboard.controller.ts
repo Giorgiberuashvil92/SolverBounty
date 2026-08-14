@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -33,6 +34,11 @@ export class DashboardController {
   @Get('reviews')
   listReviews(@CurrentUser() user: AuthUser) {
     return this.dashboard.listReviews(user.userId);
+  }
+
+  @Get('insights/weekly')
+  weeklyInsights(@CurrentUser() user: AuthUser) {
+    return this.dashboard.weeklyInsights(user.userId);
   }
 
   @Post('bankroll/setup')
@@ -98,6 +104,16 @@ export class DashboardController {
     @Param('handId') handId: string,
   ) {
     return this.dashboard.analyzeKeyHand(user.userId, sessionId, handId);
+  }
+
+  @Patch('sessions/:sessionId/key-hands/:handId')
+  updateKeyHand(@CurrentUser() user: AuthUser, @Param('sessionId') sessionId: string, @Param('handId') handId: string, @Body() body: CreateKeyHandDto) {
+    return this.dashboard.updateKeyHand(user.userId, sessionId, handId, body);
+  }
+
+  @Delete('sessions/:sessionId/key-hands/:handId')
+  deleteKeyHand(@CurrentUser() user: AuthUser, @Param('sessionId') sessionId: string, @Param('handId') handId: string) {
+    return this.dashboard.deleteKeyHand(user.userId, sessionId, handId);
   }
 
   @Post('sessions/:sessionId/key-hands/:handId/reviewed')

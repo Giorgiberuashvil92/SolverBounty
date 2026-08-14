@@ -69,8 +69,20 @@ export class DashboardService {
     return this.wrap(() => this.store.addKeyHand(userId, sessionId, dto), true);
   }
 
+  updateKeyHand(userId: string, sessionId: string, handId: string, dto: CreateKeyHandDto) {
+    return this.wrap(() => this.store.updateKeyHand(userId, sessionId, handId, dto), true);
+  }
+
+  deleteKeyHand(userId: string, sessionId: string, handId: string) {
+    return this.wrap(() => this.store.deleteKeyHand(userId, sessionId, handId), true);
+  }
+
   listReviews(userId: string) {
     return this.store.listReviews(userId);
+  }
+
+  weeklyInsights(userId: string) {
+    return this.store.weeklyInsights(userId);
   }
 
   analyzeKeyHand(userId: string, sessionId: string, handId: string) {
@@ -106,7 +118,11 @@ export class DashboardService {
       ) {
         throw new NotFoundException(msg);
       }
-      if (msg === 'Session not found' || msg === 'User not found' || msg === 'Hand not found') {
+      if (
+        msg === 'Session not found' ||
+        msg === 'User not found' ||
+        msg === 'Hand not found'
+      ) {
         throw new NotFoundException(msg);
       }
       throw new BadRequestException(msg);

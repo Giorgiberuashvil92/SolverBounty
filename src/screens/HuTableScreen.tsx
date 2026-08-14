@@ -21,11 +21,14 @@ type Props = {
 };
 
 const MATCH_END_PAUSE_MS = 3200;
+const STREET_TRANSITION_PAUSE_MS = 850;
 
 export function HuTableScreen({ onClose, onPlayAgain }: Props) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const socketRef = useRef<HuSocket | null>(null);
+  const lastServerViewRef = useRef<HuView | null>(null);
+  const streetTransitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [phase, setPhase] = useState<'connecting' | 'queued' | 'matched' | 'done'>(
     'connecting',
   );
@@ -87,7 +90,36 @@ export function HuTableScreen({ onClose, onPlayAgain }: Props) {
           },
           onTableState: (v) => {
             if (cancelled) return;
-            setView(v);
+            const previous = lastServerViewRef.current;
+            lastServerViewRef.current = v;
+            const streetJustAdvanced = Boolean(
+              previous &&
+              v.handNumber === previous.handNumber &&
+              v.board.length > previous.board.length &&
+              v.lastAction &&
+              v.lastAction.userId !== previous.lastAction?.userId,
+            );
+            if (streetTransitionRef.current) {
+              clearTimeout(streetTransitionRef.current);
+              streetTransitionRef.current = null;
+            }
+            if (streetJustAdvanced && previous) {
+              // Keep the completed action visible before the next street deals in.
+              setView({
+                ...v,
+                street: previous.street,
+                board: previous.board,
+                actorUserId: null,
+                legalActions: [],
+                actionDeadlineMs: null,
+              });
+              streetTransitionRef.current = setTimeout(() => {
+                streetTransitionRef.current = null;
+                if (!cancelled) setView(v);
+              }, STREET_TRANSITION_PAUSE_MS);
+            } else {
+              setView(v);
+            }
             setPhase(v.status === 'match_over' ? 'done' : 'matched');
             if (v.status === 'match_over') setShowQueue(false);
           },
@@ -118,6 +150,7 @@ export function HuTableScreen({ onClose, onPlayAgain }: Props) {
 
     return () => {
       cancelled = true;
+      if (streetTransitionRef.current) clearTimeout(streetTransitionRef.current);
       void sock.leaveQueue().catch(() => undefined);
       sock.disconnect();
     };

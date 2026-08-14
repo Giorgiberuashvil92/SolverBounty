@@ -23,7 +23,7 @@ import { NeonTabBar } from './src/components/NeonTabBar';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { dash } from './src/theme/dashboard';
 import type { AppTab } from './src/navigation/tabs';
-import type { DrillRecommendation } from './src/api/dashboardApi';
+import type { DrillRecommendation, GeneratedDrillPlan } from './src/api/dashboardApi';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -35,6 +35,7 @@ function AppShell({ onLayout }: { onLayout?: () => void }) {
   const [hideTabBar, setHideTabBar] = useState(false);
   const [drillRecommendation, setDrillRecommendation] = useState<DrillRecommendation | null>(null);
   const [drillRecommendationSessionId, setDrillRecommendationSessionId] = useState<string | null>(null);
+  const [generatedDrillPlan, setGeneratedDrillPlan] = useState<GeneratedDrillPlan | null>(null);
 
   if (loading) {
     return (
@@ -90,6 +91,7 @@ function AppShell({ onLayout }: { onLayout?: () => void }) {
             onOpenDrills={(context) => {
               setDrillRecommendation(context?.recommendation ?? null);
               setDrillRecommendationSessionId(context?.sessionId ?? null);
+              setGeneratedDrillPlan(null);
               setTab('drills');
             }}
             onOpenCommunity={() => setTab('community')}
@@ -101,13 +103,18 @@ function AppShell({ onLayout }: { onLayout?: () => void }) {
     <ReviewsScreen
       onOpenDaily={() => setTab('daily')}
       onOpenCommunity={() => setTab('community')}
-      onOpenDrills={() => setTab('drills')}
+      onOpenDrills={(context) => {
+        setGeneratedDrillPlan(context?.plan ?? null);
+        setTab('drills');
+      }}
     />
   ) : null}
         {tab === 'drills' ? (
           <DrillsScreen
             recommendation={drillRecommendation}
             recommendationSessionId={drillRecommendationSessionId}
+            generatedPlan={generatedDrillPlan}
+            onGeneratedPlanConsumed={() => setGeneratedDrillPlan(null)}
             onImmersiveChange={setHideTabBar}
           />
         ) : null}

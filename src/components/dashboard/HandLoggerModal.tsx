@@ -13,12 +13,8 @@ import {
   View,
 } from 'react-native';
 import { coachApi } from '../../api/coachApi';
+import { VoiceCaptureButton } from '../VoiceCaptureButton';
 import { dash } from '../../theme/dashboard';
-import {
-  getFeltTheme,
-  loadFeltThemeId,
-  type FeltThemeId,
-} from '../../theme/felt';
 import { fonts } from '../../theme/typography';
 import type { PokerActionType, Street, StructuredAction } from '../../types/session';
 
@@ -102,6 +98,7 @@ export type HandLoggerResult = {
 type HandLoggerModalProps = {
   visible: boolean;
   stakesLabel?: string;
+  initialNote?: string;
   onCancel: () => void;
   onConfirm: (input: HandLoggerResult) => void;
 };
@@ -157,6 +154,7 @@ function actionShort(a?: PokerActionType) {
 export function HandLoggerModal({
   visible,
   stakesLabel,
+  initialNote,
   onCancel,
   onConfirm,
 }: HandLoggerModalProps) {
@@ -183,9 +181,6 @@ export function HandLoggerModal({
   const [parseHint, setParseHint] = useState<string | null>(null);
   const [pickTarget, setPickTarget] = useState<PickTarget>('hole');
   const [pickSuit, setPickSuit] = useState<(typeof SUITS)[number]['id']>('s');
-  const [feltId, setFeltId] = useState<FeltThemeId>('green');
-  const felt = getFeltTheme(feltId);
-
   const seats = useMemo(() => seatsFor(tableSize), [tableSize]);
   const points = useMemo(() => seatPoints(seats.length), [seats.length]);
   const preflop = streetActions.preflop;
@@ -229,12 +224,11 @@ export function HandLoggerModal({
     setResultBb(0);
     setResultDraft('0');
     setTags([]);
-    setNote('');
+    setNote(initialNote ?? '');
     setVoiceText('');
     setParseHint(null);
     setPickTarget('hole');
     setPickSuit('s');
-    void loadFeltThemeId().then(setFeltId);
   }, [visible]);
 
   useEffect(() => {
@@ -442,9 +436,9 @@ export function HandLoggerModal({
   };
 
   const tableW = Math.min(width - 48, 340);
-  const tableH = tableW * 0.68;
-  const seatW = 54;
-  const seatH = 48;
+  const tableH = tableW * 0.78;
+  const seatW = 50;
+  const seatH = 50;
 
   const stepLabel =
     step === 'mode'
@@ -452,7 +446,7 @@ export function HandLoggerModal({
       : step === 'voice'
         ? 'Voice / dictate'
         : step === 'table'
-          ? 'Table · actions'
+          ? 'Set the action'
           : 'Tap your cards';
 
   return (
@@ -505,7 +499,7 @@ export function HandLoggerModal({
             {step === 'voice' ? (
               <>
                 <Text style={styles.hint}>
-                  Keyboard mic or paste. Next: confirm Fold/Call/Raise on the table.
+                  Tap Voice and describe the hand naturally, or paste text. Next: confirm the action line on the table.
                 </Text>
                 <TextInput
                   value={voiceText}
@@ -515,6 +509,11 @@ export function HandLoggerModal({
                   style={[styles.input, styles.voiceBox]}
                   multiline
                   textAlignVertical="top"
+                />
+                <VoiceCaptureButton
+                  stakes={stakesLabel}
+                  disabled={parsing}
+                  onResult={({ transcript }) => setVoiceText(transcript)}
                 />
                 {parseHint ? <Text style={styles.parseHint}>{parseHint}</Text> : null}
               </>
@@ -537,25 +536,22 @@ export function HandLoggerModal({
                   ))}
                 </View>
 
-                <Text style={styles.hint}>
-                  Preflop: tap seat → Fold / Call / Raise · mark Hero. Flop–river actions come after
-                  you add the board.
-                </Text>
+                <Text style={styles.hint}>Tap a seat, mark Hero, then add the action and size.</Text>
 
                 <View style={[styles.stage, { width: tableW, height: tableH }]}>
-                  <View
-                    style={[
-                      styles.rim,
-                      { backgroundColor: felt.colors[2], borderColor: felt.border },
-                    ]}
-                  >
-                    <View style={[styles.felt, { backgroundColor: felt.colors[1] }]}>
+                  <View style={styles.rim}>
+                    <View style={styles.felt}>
                       <Text style={styles.feltLabel}>{tableSize}-MAX</Text>
                       <Text style={styles.feltSub}>
-                        {heroPosition ? `Hero ${heroPosition}` : 'Mark Hero'}
+                        {heroPosition ? `Hero · ${heroPosition}` : 'Tap a seat'}
                         {foldedCount ? ` · ${foldedCount} fold` : ''}
                         {villains.length ? ` · ${villains.length} in` : ''}
                       </Text>
+                      {actionTimeline.filter((action) => action.street === 'preflop').length ? (
+                        <Text numberOfLines={2} style={styles.feltLine}>
+                          {actionTimeline.filter((action) => action.street === 'preflop').map((action) => `${action.actor} ${action.action}${action.sizeBb != null ? ` ${action.sizeBb}bb` : ''}`).join('  →  ')}
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                   {seats.map((pos, i) => {
@@ -607,9 +603,17 @@ export function HandLoggerModal({
                 <View style={styles.actionBar}>
                   <Text style={styles.actionHint}>
                     {selectedSeat
-                      ? `Preflop · ${selectedSeat}${heroPosition === selectedSeat ? ' (hero)' : ''}`
+                      ? `Preflop · ${selectedSeat}${heroPosition === selectedSeat ? ' · Hero' : ' · Villain'}`
                       : 'Tap a seat first'}
                   </Text>
+                  {heroPosition ? (
+                    <Pressable onPress={() => setStep('details')} style={styles.cardsShortcut}>
+                      <Text style={styles.cardsShortcutText}>
+                        {holeCards.length === 2 ? `Hero cards · ${holeCards.join(' ')}` : 'Add hero cards'}
+                      </Text>
+                      <Text style={styles.cardsShortcutArrow}>›</Text>
+                    </Pressable>
+                  ) : null}
                   <View style={styles.actionRow}>
                     <Pressable
                       onPress={markHero}
@@ -650,11 +654,11 @@ export function HandLoggerModal({
                         setActionSizeDraft(raw.replace(',', '.').replace(/[^\d.]/g, ''))
                       }
                       keyboardType="decimal-pad"
-                      placeholder="Size in bb"
+                      placeholder={selectedSeat ? `${selectedSeat} size in bb` : 'Size in bb'}
                       placeholderTextColor={dash.textMuted}
                       style={styles.sizeInput}
                     />
-                    <Text style={styles.sizeUnit}>Optional for Call / Raise / All-in</Text>
+                    <Text style={styles.sizeUnit}>Saved with this action</Text>
                   </View>
                   {actionTimeline.filter((a) => a.street === 'preflop').length ? (
                     <View style={styles.timeline}>
@@ -1159,57 +1163,66 @@ const styles = StyleSheet.create({
   rim: {
     flex: 1,
     borderRadius: 999,
-    backgroundColor: '#0a2418',
-    padding: 8,
-    borderWidth: 2,
-    borderColor: 'rgba(77,163,255,0.35)',
+    backgroundColor: 'rgba(4,11,22,0.34)',
+    padding: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(143,196,255,0.3)',
   },
   felt: {
     flex: 1,
     borderRadius: 999,
-    backgroundColor: '#14532d',
+    backgroundColor: 'rgba(7,19,34,0.42)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(143,196,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
   feltLabel: {
-    color: '#fff',
+    color: dash.text,
     fontFamily: fonts.bodyBold,
-    fontSize: 16,
-    letterSpacing: 1.2,
+    fontSize: 12,
+    letterSpacing: 1,
   },
   feltSub: {
-    color: 'rgba(255,255,255,0.7)',
+    color: dash.textMuted,
     fontFamily: fonts.body,
     fontSize: 11,
     textAlign: 'center',
     paddingHorizontal: 16,
   },
+  feltLine: {
+    maxWidth: '78%',
+    color: dash.opsSoft,
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    lineHeight: 14,
+    textAlign: 'center',
+    marginTop: 4,
+  },
   seat: {
     position: 'absolute',
-    borderRadius: 14,
-    backgroundColor: '#121C2E',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 999,
+    backgroundColor: 'rgba(10,21,37,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(143,196,255,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
   },
   seatSelected: {
-    borderColor: '#fff',
+    borderColor: dash.ops,
     borderWidth: 2,
     transform: [{ scale: 1.05 }],
   },
   seatHero: {
-    backgroundColor: 'rgba(46,230,106,0.28)',
+    backgroundColor: 'rgba(46,230,106,0.14)',
     borderColor: '#2EE66A',
   },
   seatFold: {
-    backgroundColor: 'rgba(239,68,68,0.22)',
-    borderColor: '#EF4444',
-    opacity: 0.85,
+    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    opacity: 0.58,
   },
   seatIn: {
     backgroundColor: 'rgba(77,163,255,0.28)',
@@ -1240,6 +1253,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     fontSize: 12,
   },
+  cardsShortcut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(77,163,255,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(77,163,255,0.24)',
+  },
+  cardsShortcutText: { color: dash.opsSoft, fontFamily: fonts.bodyBold, fontSize: 12 },
+  cardsShortcutArrow: { color: dash.opsSoft, fontFamily: fonts.displayBold, fontSize: 20, lineHeight: 18 },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   sizeRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   sizeInput: {
